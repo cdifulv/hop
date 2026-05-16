@@ -67,6 +67,22 @@ export function createMemoryLinkRepository(
         }))
         .sort((left, right) => compareDashboardLinks(left, right, options))
     },
+    async updateExpirationBySlugKey(slugKey: string, expiresAt: Date | null) {
+      const link = links.get(slugKey)
+
+      if (!link) {
+        return null
+      }
+
+      const updated: LinkRecord = {
+        ...link,
+        expiresAt,
+        updatedAt: now,
+      }
+
+      links.set(slugKey, updated)
+      return updated
+    },
     async tombstoneBySlugKey(slugKey: string) {
       const link = links.get(slugKey)
 

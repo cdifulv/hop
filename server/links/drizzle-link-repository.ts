@@ -72,6 +72,18 @@ export function createDrizzleLinkRepository(): LinkRepository {
         }))
         .filter((link) => link.lifecycleState !== "tombstoned")
     },
+    async updateExpirationBySlugKey(slugKey, expiresAt) {
+      const [link] = await db
+        .update(links)
+        .set({
+          expiresAt,
+          updatedAt: new Date(),
+        })
+        .where(eq(links.slugKey, slugKey))
+        .returning()
+
+      return link ? toLinkRecord(link) : null
+    },
     async tombstoneBySlugKey(slugKey) {
       const [link] = await db
         .update(links)

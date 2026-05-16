@@ -44,6 +44,10 @@ export interface LinkRepository {
     memberId: string,
     options?: ListMemberLinksOptions,
   ): Promise<DashboardLinkRecord[]>
+  updateExpirationBySlugKey(
+    slugKey: string,
+    expiresAt: Date | null,
+  ): Promise<LinkRecord | null>
   tombstoneBySlugKey(slugKey: string): Promise<LinkRecord | null>
 }
 
@@ -227,6 +231,39 @@ export function createLinkLifecycle(options: LinkLifecycleOptions) {
       return {
         status: "deleted",
         link: deleted,
+      }
+    },
+    async updateMemberLinkExpiration(
+      member: { id: string },
+      slug: string,
+      expiresAt: Date | null,
+    ): Promise<{ status: "updated"; link: LinkRecord } | { status: "not_found" }> {
+      const link = await options.repository.findBySlugKey(slug.toLowerCase())
+
+      if (
+        !link ||
+        link.lifecycleState === "tombstoned" ||
+        !can({ type: "member", memberId: member.id }, "update_expiration", link)
+      ) {
+        return {
+          status: "not_found",
+        }
+      }
+
+      const updated = await options.repository.updateExpirationBySlugKey(
+        link.slugKey,
+        expiresAt,
+      )
+
+      if (!updated) {
+        return {
+          status: "not_found",
+        }
+      }
+
+      return {
+        status: "updated",
+        link: updated,
       }
     },
     async resolve(slug: string): Promise<ResolveLinkResult> {

@@ -7,7 +7,7 @@ export type LinkActor =
       memberId: string
     }
 
-export type LinkAction = "view" | "delete"
+export type LinkAction = "view" | "delete" | "update_expiration"
 
 interface AuthorizableLink {
   ownerMemberId: string | null
