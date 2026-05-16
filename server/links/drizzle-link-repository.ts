@@ -42,10 +42,28 @@ export function createDrizzleLinkRepository(): LinkRepository {
 
       return link ? toLinkRecord(link) : null
     },
+    async findById(id) {
+      const [link] = await db.select().from(links).where(eq(links.id, id)).limit(1)
+
+      return link ? toLinkRecord(link) : null
+    },
+    async tombstoneBySlugKey(slugKey) {
+      const [link] = await db
+        .update(links)
+        .set({
+          lifecycleState: "tombstoned",
+          tombstonedAt: new Date(),
+          updatedAt: new Date(),
+        })
+        .where(eq(links.slugKey, slugKey))
+        .returning()
+
+      return link ? toLinkRecord(link) : null
+    },
   }
 }
 
-function toLinkRecord(link: typeof links.$inferSelect): LinkRecord {
+export function toLinkRecord(link: typeof links.$inferSelect): LinkRecord {
   return {
     id: link.id,
     slug: link.slug,

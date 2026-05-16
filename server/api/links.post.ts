@@ -1,6 +1,8 @@
 import { createError, defineEventHandler, readBody } from "h3"
 
+import { toLinkResponse } from "../links/response"
 import { createProductionLinkLifecycle } from "../links/service"
+import { getOrCreateBrowserSessionToken } from "../utils/browser-session-cookie"
 import { isConfiguredHost } from "../utils/domains"
 
 interface CreateLinkBody {
@@ -61,6 +63,7 @@ export default defineEventHandler(async (event) => {
   }
 
   const links = createProductionLinkLifecycle()
+  const browserSessionToken = getOrCreateBrowserSessionToken(event)
   const result = await links.create({
     destination: body.destination.trim(),
     slug:
@@ -68,6 +71,7 @@ export default defineEventHandler(async (event) => {
         ? body.slug.trim()
         : undefined,
     expiresAt: parseExpiresAt(body.expiresAt),
+    browserSessionToken,
   })
 
   if (result.status === "rejected") {
@@ -78,16 +82,8 @@ export default defineEventHandler(async (event) => {
   }
 
   const shortHost = config.public.shortDomain || config.shortDomain
-  const shortUrl = shortHost
-    ? `https://${shortHost}/${result.link.slug}`
-    : `/${result.link.slug}`
 
   return {
-    link: {
-      slug: result.link.slug,
-      destination: result.link.destination,
-      expiresAt: result.link.expiresAt?.toISOString() ?? null,
-      shortUrl,
-    },
+    link: toLinkResponse(result.link, shortHost),
   }
 })

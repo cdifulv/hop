@@ -27,6 +27,14 @@ export interface LinkRepository {
   slugKeyExists(slugKey: string): Promise<boolean>
   insert(input: CreateLinkInput): Promise<LinkRecord>
   findBySlugKey(slugKey: string): Promise<LinkRecord | null>
+  findById(id: string): Promise<LinkRecord | null>
+  tombstoneBySlugKey(slugKey: string): Promise<LinkRecord | null>
+}
+
+export interface BrowserSessionRepository {
+  track(token: string, linkId: string): Promise<void>
+  listLinks(token: string): Promise<LinkRecord[]>
+  tombstoneLink(token: string, slugKey: string): Promise<LinkRecord | null>
 }
 
 export type CreateLinkResult =
@@ -63,6 +71,7 @@ type SlugRejectionReason = Exclude<
 
 interface LinkLifecycleOptions {
   repository: LinkRepository
+  browserSessions?: BrowserSessionRepository
   validateDestination(
     input: string,
   ): DestinationValidationResult | Promise<DestinationValidationResult>
@@ -84,6 +93,7 @@ export function createLinkLifecycle(options: LinkLifecycleOptions) {
       destination: string
       slug?: string
       expiresAt?: Date | null
+      browserSessionToken?: string | null
     }): Promise<CreateLinkResult> {
       const destination = await options.validateDestination(input.destination)
 
@@ -108,8 +118,42 @@ export function createLinkLifecycle(options: LinkLifecycleOptions) {
         ownerMemberId: null,
       })
 
+      if (input.browserSessionToken && options.browserSessions) {
+        await options.browserSessions.track(input.browserSessionToken, link.id)
+      }
+
       return {
         status: "created",
+        link,
+      }
+    },
+    async listBrowserSessionLinks(token: string): Promise<LinkRecord[]> {
+      if (!options.browserSessions) {
+        return []
+      }
+
+      return options.browserSessions.listLinks(token)
+    },
+    async deleteBrowserSessionLink(
+      token: string,
+      slug: string,
+    ): Promise<{ status: "deleted"; link: LinkRecord } | { status: "not_found" }> {
+      if (!options.browserSessions) {
+        return {
+          status: "not_found",
+        }
+      }
+
+      const link = await options.browserSessions.tombstoneLink(token, slug.toLowerCase())
+
+      if (!link) {
+        return {
+          status: "not_found",
+        }
+      }
+
+      return {
+        status: "deleted",
         link,
       }
     },

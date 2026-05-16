@@ -6,6 +6,12 @@ interface CreatedLink {
   shortUrl: string
 }
 
+interface SessionLink extends CreatedLink {
+  host: string
+  title: string
+  expiry: string | null
+}
+
 type ExpirationPreset = "none" | "1d" | "7d" | "30d" | "date"
 
 const config = useRuntimeConfig()
@@ -16,9 +22,13 @@ const customSlug = ref("")
 const expirationPreset = ref<ExpirationPreset>("none")
 const customExpirationDate = ref("")
 const createdLink = ref<CreatedLink | null>(null)
+const sessionLinks = ref<SessionLink[]>([])
 const createErrorMessage = ref("")
+const sessionErrorMessage = ref("")
 const isCreating = ref(false)
+const deletingSlug = ref("")
 const copyState = ref<"idle" | "copied">("idle")
+const copiedSessionSlug = ref("")
 
 const colorModeTitle = computed(() =>
   colorMode.value === "dark" ? "Switch to light mode" : "Switch to dark mode"
@@ -63,50 +73,16 @@ const canCreateLink = computed(
     (expirationPreset.value !== "date" || customExpirationDate.value !== ""),
 )
 
-const recentLinks = [
+const stats = computed(() => [
+  { label: "Session links", value: String(sessionLinks.value.length) },
+  { label: "Total clicks", value: "0" },
   {
-    slug: "q3-deck",
-    host: "docs.google.com",
-    title: "Q3 LP Update - Final.pptx",
-    clicks: "124",
-    created: "7h ago",
-    expiry: null,
-    tone: "muted",
+    label: "Active expiring",
+    value: String(sessionLinks.value.filter((link) => link.expiresAt).length),
   },
-  {
-    slug: "all-hands",
-    host: "somerset.zoom.us",
-    title: "All-Hands - Recurring Zoom",
-    clicks: "213",
-    created: "1d ago",
-    expiry: null,
-    tone: "muted",
-  },
-  {
-    slug: "aurora-memo",
-    host: "drive.google.com",
-    title: "Project Aurora - IC Memo (Draft 4)",
-    clicks: "89",
-    created: "2d ago",
-    expiry: "expires in 6d",
-    tone: "warning",
-  },
-  {
-    slug: "policy-2026",
-    host: "somcap.box.com",
-    title: "Compliance Handbook 2026",
-    clicks: "8",
-    created: "11h ago",
-    expiry: "expires in 28d",
-    tone: "muted",
-  },
-]
+])
 
-const stats = [
-  { label: "Workspace links", value: "6" },
-  { label: "Total clicks", value: "1,093" },
-  { label: "Active expiring", value: "2" },
-]
+onMounted(loadSessionLinks)
 
 function iconButtonClass(danger = false) {
   return danger
@@ -164,6 +140,7 @@ async function createLink() {
     })
 
     createdLink.value = response.link
+    upsertSessionLink(response.link)
   } catch (error) {
     createErrorMessage.value = createLinkErrorMessage(error)
   } finally {
@@ -221,8 +198,84 @@ async function copyCreatedLink() {
     return
   }
 
-  await navigator.clipboard.writeText(createdLink.value.shortUrl)
+  await copyLink(createdLink.value)
   copyState.value = "copied"
+}
+
+async function loadSessionLinks() {
+  sessionErrorMessage.value = ""
+
+  try {
+    const response = await $fetch<{ links: CreatedLink[] }>("/api/links")
+    sessionLinks.value = response.links.map(toSessionLink)
+  } catch {
+    sessionErrorMessage.value = "Unable to load this Browser session's Links."
+  }
+}
+
+function upsertSessionLink(link: CreatedLink) {
+  sessionLinks.value = [
+    toSessionLink(link),
+    ...sessionLinks.value.filter((sessionLink) => sessionLink.slug !== link.slug),
+  ]
+}
+
+function toSessionLink(link: CreatedLink): SessionLink {
+  return {
+    ...link,
+    host: destinationHost(link.destination),
+    title: link.destination,
+    expiry: expirationLabel(link.expiresAt),
+  }
+}
+
+function destinationHost(value: string) {
+  try {
+    return new URL(value).host
+  } catch {
+    return value
+  }
+}
+
+function expirationLabel(value: string | null) {
+  if (!value) {
+    return null
+  }
+
+  const expiresAt = new Date(value)
+
+  if (Number.isNaN(expiresAt.getTime())) {
+    return null
+  }
+
+  return `expires ${expiresAt.toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  })}`
+}
+
+async function copyLink(link: CreatedLink) {
+  await navigator.clipboard.writeText(link.shortUrl)
+  copiedSessionSlug.value = link.slug
+}
+
+async function deleteSessionLink(link: SessionLink) {
+  sessionErrorMessage.value = ""
+  deletingSlug.value = link.slug
+
+  try {
+    await $fetch(`/api/links/${encodeURIComponent(link.slug)}`, {
+      method: "DELETE",
+    })
+    sessionLinks.value = sessionLinks.value.filter(
+      (sessionLink) => sessionLink.slug !== link.slug,
+    )
+  } catch {
+    sessionErrorMessage.value = "Unable to delete this Link from the Browser session."
+  } finally {
+    deletingSlug.value = ""
+  }
 }
 </script>
 
@@ -423,7 +476,7 @@ async function copyCreatedLink() {
               Recent hops
             </h2>
             <p class="mt-1 text-sm text-[#6B6F76] dark:text-[#94A3B8]">
-              6 links in this workspace
+              {{ sessionLinks.length }} links in this Browser session
             </p>
           </div>
           <div class="flex flex-col gap-3 sm:flex-row sm:items-center">
@@ -431,7 +484,7 @@ async function copyCreatedLink() {
               <UIcon name="i-lucide-search" class="h-4 w-4" />
               <input
                 class="min-w-0 flex-1 bg-transparent text-sm text-[#111827] outline-none placeholder:text-[#9CA3AF] dark:text-[#F1F5F9]"
-                placeholder="Search slugs, domains, titles"
+                placeholder="Search slugs and destinations"
               >
             </label>
             <div class="inline-flex rounded-[10px] border border-[#E5E7EB] bg-[#F8FAFC] p-1 dark:border-[#334155] dark:bg-[#13223A]">
@@ -460,8 +513,21 @@ async function copyCreatedLink() {
           <template #header>
             <h2>Recent hops</h2>
           </template>
+            <div
+              v-if="sessionErrorMessage"
+              class="border-b border-[#E5E7EB] px-5 py-4 text-sm font-medium text-[#DC2626] dark:border-[#273447] dark:text-[#F87171]"
+              role="alert"
+            >
+              {{ sessionErrorMessage }}
+            </div>
+            <div
+              v-if="sessionLinks.length === 0"
+              class="px-5 py-8 text-sm text-[#6B6F76] dark:text-[#94A3B8]"
+            >
+              Links created in this Browser session will appear here.
+            </div>
             <article
-              v-for="(link, index) in recentLinks"
+              v-for="(link, index) in sessionLinks"
               :key="link.slug"
               class="grid gap-4 border-b border-[#E5E7EB] px-5 py-5 last:border-b-0 dark:border-[#273447] lg:grid-cols-[1fr_auto_auto] lg:items-center lg:gap-6"
               :class="index === 0 ? 'border-l-4 border-l-[#0B4DA2] bg-[rgba(11,77,162,0.06)]' : ''"
@@ -481,9 +547,7 @@ async function copyCreatedLink() {
                     v-if="link.expiry"
                     variant="outline"
                     leading-icon="i-lucide-calendar-clock"
-                    :class="link.tone === 'warning'
-                      ? 'h-6 rounded-md border-0 bg-[#FEF3C7] text-[#B7791F] dark:bg-yellow-400/10 dark:text-[#FBBF24]'
-                      : 'h-6 rounded-md border-[#E5E7EB] bg-[#F8FAFC] text-[#6B6F76] dark:border-[#334155] dark:bg-[#1E293B] dark:text-[#94A3B8]'"
+                    class="h-6 rounded-md border-[#E5E7EB] bg-[#F8FAFC] text-[#6B6F76] dark:border-[#334155] dark:bg-[#1E293B] dark:text-[#94A3B8]"
                   >
                     {{ link.expiry }}
                   </UBadge>
@@ -500,7 +564,7 @@ async function copyCreatedLink() {
               <div class="flex gap-7 lg:justify-end">
                 <div class="min-w-14 lg:text-right">
                   <div class="font-serif text-[22px] font-bold leading-none text-[#0B1320] dark:text-white">
-                    {{ link.clicks }}
+                    0
                   </div>
                   <div class="mt-1 text-[11px] font-medium uppercase tracking-normal text-[#9CA3AF]">
                     clicks
@@ -508,7 +572,7 @@ async function copyCreatedLink() {
                 </div>
                 <div class="min-w-16 lg:text-right">
                   <div class="text-sm font-medium text-[#6B6F76] dark:text-[#94A3B8]">
-                    {{ link.created }}
+                    now
                   </div>
                   <div class="mt-1 text-[11px] font-medium uppercase tracking-normal text-[#9CA3AF]">
                     created
@@ -517,9 +581,38 @@ async function copyCreatedLink() {
               </div>
 
               <div class="flex gap-1 lg:justify-end">
-                <UButton aria-label="Copy link" title="Copy link" variant="ghost" size="sm" square icon="i-lucide-copy" :class="iconButtonClass()" />
-                <UButton aria-label="Open destination" title="Open destination" variant="ghost" size="sm" square icon="i-lucide-external-link" :class="iconButtonClass()" />
-                <UButton aria-label="Delete link" title="Delete link" variant="ghost" size="sm" square icon="i-lucide-trash-2" :class="iconButtonClass(true)" />
+                <UButton
+                  :aria-label="copiedSessionSlug === link.slug ? 'Copied link' : 'Copy link'"
+                  :title="copiedSessionSlug === link.slug ? 'Copied link' : 'Copy link'"
+                  variant="ghost"
+                  size="sm"
+                  square
+                  :icon="copiedSessionSlug === link.slug ? 'i-lucide-check' : 'i-lucide-copy'"
+                  :class="iconButtonClass()"
+                  @click="copyLink(link)"
+                />
+                <UButton
+                  aria-label="Open destination"
+                  title="Open destination"
+                  variant="ghost"
+                  size="sm"
+                  square
+                  icon="i-lucide-external-link"
+                  :to="link.destination"
+                  target="_blank"
+                  :class="iconButtonClass()"
+                />
+                <UButton
+                  aria-label="Delete link"
+                  title="Delete link"
+                  variant="ghost"
+                  size="sm"
+                  square
+                  icon="i-lucide-trash-2"
+                  :loading="deletingSlug === link.slug"
+                  :class="iconButtonClass(true)"
+                  @click="deleteSessionLink(link)"
+                />
               </div>
             </article>
         </UCard>
