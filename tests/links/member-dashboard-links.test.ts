@@ -14,6 +14,22 @@ function createDashboardLinks() {
       createdAt: new Date("2026-05-15T14:30:00.000Z"),
     },
     {
+      slug: "release-notes",
+      slugKey: "release-notes",
+      destination: "https://product.example.com/changelog",
+      ownerMemberId: "member-1",
+      clickCount: 7,
+      createdAt: new Date("2026-05-16T09:00:00.000Z"),
+    },
+    {
+      slug: "finance",
+      slugKey: "finance",
+      destination: "https://reports.example.com/q2",
+      ownerMemberId: "member-1",
+      clickCount: 11,
+      createdAt: new Date("2026-05-14T09:00:00.000Z"),
+    },
+    {
       slug: "theirs",
       slugKey: "theirs",
       destination: "https://docs.example.com/theirs",
@@ -50,11 +66,78 @@ describe("Member dashboard Links", () => {
 
     await expect(links.listMemberLinks({ id: "member-1" })).resolves.toEqual([
       expect.objectContaining({
-        slug: "mine",
-        destination: "https://docs.example.com/mine",
+        slug: "release-notes",
+        destination: "https://product.example.com/changelog",
         ownerMemberId: "member-1",
+        clickCount: 7,
+        createdAt: new Date("2026-05-16T09:00:00.000Z"),
+      }),
+      expect.objectContaining({
+        slug: "mine",
+      }),
+      expect.objectContaining({
+        slug: "finance",
+      }),
+    ])
+  })
+
+  it("searches the signed-in Member's Links by Slug, Destination host, or displayed title", async () => {
+    const links = createDashboardLinks()
+
+    await expect(
+      links.listMemberLinks({ id: "member-1" }, { search: "release" }),
+    ).resolves.toEqual([
+      expect.objectContaining({
+        slug: "release-notes",
+      }),
+    ])
+    await expect(
+      links.listMemberLinks({ id: "member-1" }, { search: "reports.example.com" }),
+    ).resolves.toEqual([
+      expect.objectContaining({
+        slug: "finance",
+      }),
+    ])
+    await expect(
+      links.listMemberLinks({ id: "member-1" }, { search: "docs.example.com/mine" }),
+    ).resolves.toEqual([
+      expect.objectContaining({
+        slug: "mine",
+      }),
+    ])
+  })
+
+  it("sorts the signed-in Member's Links by most recent or most clicked", async () => {
+    const links = createDashboardLinks()
+
+    await expect(
+      links.listMemberLinks({ id: "member-1" }, { sort: "recent" }),
+    ).resolves.toEqual([
+      expect.objectContaining({ slug: "release-notes", clickCount: 7 }),
+      expect.objectContaining({ slug: "mine", clickCount: 3 }),
+      expect.objectContaining({ slug: "finance", clickCount: 11 }),
+    ])
+    await expect(
+      links.listMemberLinks({ id: "member-1" }, { sort: "clicks" }),
+    ).resolves.toEqual([
+      expect.objectContaining({ slug: "finance", clickCount: 11 }),
+      expect.objectContaining({ slug: "release-notes", clickCount: 7 }),
+      expect.objectContaining({ slug: "mine", clickCount: 3 }),
+    ])
+  })
+
+  it("searches and sorts only within the signed-in Member's own Links", async () => {
+    const links = createDashboardLinks()
+
+    await expect(
+      links.listMemberLinks(
+        { id: "member-1" },
+        { search: "docs.example.com", sort: "clicks" },
+      ),
+    ).resolves.toEqual([
+      expect.objectContaining({
+        slug: "mine",
         clickCount: 3,
-        createdAt: new Date("2026-05-15T14:30:00.000Z"),
       }),
     ])
   })
@@ -76,6 +159,13 @@ describe("Member dashboard Links", () => {
         }),
       },
     )
-    await expect(links.listMemberLinks({ id: "member-1" })).resolves.toEqual([])
+    await expect(links.listMemberLinks({ id: "member-1" })).resolves.toEqual([
+      expect.objectContaining({
+        slug: "release-notes",
+      }),
+      expect.objectContaining({
+        slug: "finance",
+      }),
+    ])
   })
 })

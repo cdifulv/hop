@@ -17,6 +17,7 @@ interface SessionLink extends CreatedLink {
 }
 
 type ExpirationPreset = "none" | "1d" | "7d" | "30d" | "date"
+type MemberLinkSort = "recent" | "clicks"
 
 const config = useRuntimeConfig()
 const shortDomain = computed(() => config.public.shortDomain)
@@ -30,6 +31,8 @@ const sessionLinks = ref<SessionLink[]>([])
 const createErrorMessage = ref("")
 const sessionErrorMessage = ref("")
 const listScope = ref<"member" | "browser">("browser")
+const linkSearch = ref("")
+const linkSort = ref<MemberLinkSort>("recent")
 const isCreating = ref(false)
 const deletingSlug = ref("")
 const copyState = ref<"idle" | "copied">("idle")
@@ -78,26 +81,68 @@ const canCreateLink = computed(
     (expirationPreset.value !== "date" || customExpirationDate.value !== ""),
 )
 
+const displayedSessionLinks = computed(() => {
+  const search = linkSearch.value.trim().toLowerCase()
+
+  return [...sessionLinks.value]
+    .filter((link) => {
+      if (!search) {
+        return true
+      }
+
+      return [link.slug, link.host, link.title].some((value) =>
+        value.toLowerCase().includes(search),
+      )
+    })
+    .sort((left, right) => {
+      if (linkSort.value === "clicks") {
+        const clickOrder = right.clickCount - left.clickCount
+
+        if (clickOrder !== 0) {
+          return clickOrder
+        }
+      }
+
+      return new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime()
+    })
+})
+
 const stats = computed(() => [
   {
     label: listScope.value === "member" ? "Member links" : "Session links",
-    value: String(sessionLinks.value.length),
+    value: String(displayedSessionLinks.value.length),
   },
   {
     label: "Total clicks",
     value: String(
-      sessionLinks.value.reduce((total, link) => total + link.clickCount, 0),
+      displayedSessionLinks.value.reduce((total, link) => total + link.clickCount, 0),
     ),
   },
   {
     label: "Active expiring",
     value: String(
-      sessionLinks.value.filter((link) => link.expirationStatus === "active").length,
+      displayedSessionLinks.value.filter((link) => link.expirationStatus === "active").length,
     ),
   },
 ])
 
+const emptyListMessage = computed(() => {
+  if (linkSearch.value.trim()) {
+    return "No matching Links."
+  }
+
+  return listScope.value === "member"
+    ? "Member Links will appear here."
+    : "Links created in this Browser session will appear here."
+})
+
 onMounted(loadSessionLinks)
+
+watch([linkSearch, linkSort], () => {
+  if (listScope.value === "member") {
+    void loadSessionLinks()
+  }
+})
 
 function iconButtonClass(danger = false) {
   return danger
@@ -230,7 +275,12 @@ async function loadSessionLinks() {
 
 async function fetchLinks() {
   try {
-    const response = await $fetch<{ links: CreatedLink[] }>("/api/member/links")
+    const response = await $fetch<{ links: CreatedLink[] }>("/api/member/links", {
+      query: {
+        search: linkSearch.value || undefined,
+        sort: linkSort.value,
+      },
+    })
     listScope.value = "member"
     return response
   } catch (error) {
@@ -544,22 +594,27 @@ async function deleteSessionLink(link: SessionLink) {
             <label class="flex min-w-0 items-center gap-2 rounded-[10px] border border-[#E5E7EB] bg-white px-3 py-2 text-[#6B6F76] focus-within:border-[#0B4DA2] focus-within:shadow-[0_0_0_3px_rgba(11,77,162,0.08)] dark:border-[#334155] dark:bg-[#13223A] dark:text-[#94A3B8] sm:min-w-[260px]">
               <UIcon name="i-lucide-search" class="h-4 w-4" />
               <input
+                v-model="linkSearch"
                 class="min-w-0 flex-1 bg-transparent text-sm text-[#111827] outline-none placeholder:text-[#9CA3AF] dark:text-[#F1F5F9]"
-                placeholder="Search slugs and destinations"
+                placeholder="Search Slugs, hosts, titles"
               >
             </label>
             <div class="inline-flex rounded-[10px] border border-[#E5E7EB] bg-[#F8FAFC] p-1 dark:border-[#334155] dark:bg-[#13223A]">
               <UButton
                 variant="ghost"
                 size="sm"
-                class="h-8 rounded-md bg-white px-3 text-[#0B1320] shadow-sm hover:bg-white dark:bg-[#1E293B] dark:text-white"
+                class="h-8 rounded-md px-3"
+                :class="linkSort === 'recent' ? 'bg-white text-[#0B1320] shadow-sm hover:bg-white dark:bg-[#1E293B] dark:text-white' : 'text-[#6B6F76] hover:bg-white hover:text-[#111827] dark:text-[#94A3B8] dark:hover:bg-[#1E293B] dark:hover:text-white'"
+                @click="linkSort = 'recent'"
               >
                 Recent
               </UButton>
               <UButton
                 variant="ghost"
                 size="sm"
-                class="h-8 rounded-md px-3 text-[#6B6F76] hover:bg-white hover:text-[#111827] dark:text-[#94A3B8] dark:hover:bg-[#1E293B] dark:hover:text-white"
+                class="h-8 rounded-md px-3"
+                :class="linkSort === 'clicks' ? 'bg-white text-[#0B1320] shadow-sm hover:bg-white dark:bg-[#1E293B] dark:text-white' : 'text-[#6B6F76] hover:bg-white hover:text-[#111827] dark:text-[#94A3B8] dark:hover:bg-[#1E293B] dark:hover:text-white'"
+                @click="linkSort = 'clicks'"
               >
                 Most clicked
               </UButton>
@@ -582,13 +637,13 @@ async function deleteSessionLink(link: SessionLink) {
               {{ sessionErrorMessage }}
             </div>
             <div
-              v-if="sessionLinks.length === 0"
+              v-if="displayedSessionLinks.length === 0"
               class="px-5 py-8 text-sm text-[#6B6F76] dark:text-[#94A3B8]"
             >
-              Links created in this Browser session will appear here.
+              {{ emptyListMessage }}
             </div>
             <article
-              v-for="(link, index) in sessionLinks"
+              v-for="(link, index) in displayedSessionLinks"
               :key="link.slug"
               class="grid gap-4 border-b border-[#E5E7EB] px-5 py-5 last:border-b-0 dark:border-[#273447] lg:grid-cols-[1fr_auto_auto] lg:items-center lg:gap-6"
               :class="index === 0 ? 'border-l-4 border-l-[#0B4DA2] bg-[rgba(11,77,162,0.06)]' : ''"

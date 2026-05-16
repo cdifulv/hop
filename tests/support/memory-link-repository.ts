@@ -1,6 +1,7 @@
 import type {
   BrowserSessionRepository,
   CreateLinkInput,
+  ListMemberLinksOptions,
   LinkRecord,
   LinkRepository,
 } from "../../server/links/link-lifecycle"
@@ -53,17 +54,18 @@ export function createMemoryLinkRepository(
     async findById(id: string) {
       return [...links.values()].find((link) => link.id === id) ?? null
     },
-    async listForMember(memberId: string) {
+    async listForMember(memberId: string, options: ListMemberLinksOptions = {}) {
       return [...links.values()]
         .filter(
           (link) => link.ownerMemberId === memberId && link.lifecycleState !== "tombstoned",
         )
+        .filter((link) => matchesSearch(link, options.search))
         .map((link) => ({
           ...link,
           clickCount:
             seeds.find((seed) => seed.slugKey === link.slugKey)?.clickCount ?? 0,
         }))
-        .sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime())
+        .sort((left, right) => compareDashboardLinks(left, right, options))
     },
     async tombstoneBySlugKey(slugKey: string) {
       const link = links.get(slugKey)
@@ -84,6 +86,44 @@ export function createMemoryLinkRepository(
     replace(link) {
       links.set(link.slugKey, link)
     },
+  }
+}
+
+function compareDashboardLinks(
+  left: LinkRecord & { clickCount: number },
+  right: LinkRecord & { clickCount: number },
+  options: ListMemberLinksOptions,
+) {
+  if (options.sort === "clicks") {
+    const clickOrder = right.clickCount - left.clickCount
+
+    if (clickOrder !== 0) {
+      return clickOrder
+    }
+  }
+
+  return right.createdAt.getTime() - left.createdAt.getTime()
+}
+
+function matchesSearch(link: LinkRecord, search?: string) {
+  const query = search?.trim().toLowerCase()
+
+  if (!query) {
+    return true
+  }
+
+  return [
+    link.slug,
+    destinationHost(link.destination),
+    link.destination,
+  ].some((value) => value.toLowerCase().includes(query))
+}
+
+function destinationHost(destination: string) {
+  try {
+    return new URL(destination).host
+  } catch {
+    return destination
   }
 }
 

@@ -20,6 +20,13 @@ export type DashboardLinkRecord = LinkRecord & {
   clickCount: number
 }
 
+export type MemberLinkSort = "recent" | "clicks"
+
+export interface ListMemberLinksOptions {
+  search?: string
+  sort?: MemberLinkSort
+}
+
 export interface CreateLinkInput {
   slug: string
   slugKey: string
@@ -33,7 +40,10 @@ export interface LinkRepository {
   insert(input: CreateLinkInput): Promise<LinkRecord>
   findBySlugKey(slugKey: string): Promise<LinkRecord | null>
   findById(id: string): Promise<LinkRecord | null>
-  listForMember(memberId: string): Promise<DashboardLinkRecord[]>
+  listForMember(
+    memberId: string,
+    options?: ListMemberLinksOptions,
+  ): Promise<DashboardLinkRecord[]>
   tombstoneBySlugKey(slugKey: string): Promise<LinkRecord | null>
 }
 
@@ -181,9 +191,12 @@ export function createLinkLifecycle(options: LinkLifecycleOptions) {
         links: await options.browserSessions.claimLinks(token, member.id),
       }
     },
-    async listMemberLinks(member: { id: string }): Promise<DashboardLinkRecord[]> {
+    async listMemberLinks(
+      member: { id: string },
+      listOptions?: ListMemberLinksOptions,
+    ): Promise<DashboardLinkRecord[]> {
       const actor = { type: "member" as const, memberId: member.id }
-      const links = await options.repository.listForMember(member.id)
+      const links = await options.repository.listForMember(member.id, listOptions)
 
       return links.filter((link) => can(actor, "view", link))
     },

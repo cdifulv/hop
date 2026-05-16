@@ -1,8 +1,13 @@
-import { desc, eq, sql } from "drizzle-orm"
+import { and, desc, eq, ilike, or, sql } from "drizzle-orm"
 
 import { db } from "../db"
 import { clickEvents, links } from "../db/schema/hop"
-import type { DashboardLinkRecord, LinkRecord, LinkRepository } from "./link-lifecycle"
+import type {
+  DashboardLinkRecord,
+  LinkRecord,
+  LinkRepository,
+  ListMemberLinksOptions,
+} from "./link-lifecycle"
 
 export function createDrizzleLinkRepository(): LinkRepository {
   return {
@@ -47,7 +52,8 @@ export function createDrizzleLinkRepository(): LinkRepository {
 
       return link ? toLinkRecord(link) : null
     },
-    async listForMember(memberId) {
+    async listForMember(memberId, options = {}) {
+      const search = memberLinkSearch(options)
       const rows = await db
         .select({
           link: links,
@@ -55,9 +61,9 @@ export function createDrizzleLinkRepository(): LinkRepository {
         })
         .from(links)
         .leftJoin(clickEvents, eq(clickEvents.linkId, links.id))
-        .where(eq(links.ownerMemberId, memberId))
+        .where(and(eq(links.ownerMemberId, memberId), search))
         .groupBy(links.id)
-        .orderBy(desc(links.createdAt))
+        .orderBy(...memberLinkOrder(options))
 
       return rows
         .map((row): DashboardLinkRecord => ({
@@ -80,6 +86,32 @@ export function createDrizzleLinkRepository(): LinkRepository {
       return link ? toLinkRecord(link) : null
     },
   }
+}
+
+function memberLinkSearch(options: ListMemberLinksOptions) {
+  const search = options.search?.trim()
+
+  if (!search) {
+    return undefined
+  }
+
+  const pattern = `%${escapeLike(search)}%`
+
+  return or(ilike(links.slug, pattern), ilike(links.destination, pattern))
+}
+
+function memberLinkOrder(options: ListMemberLinksOptions) {
+  const recentOrder = desc(links.createdAt)
+
+  if (options.sort === "clicks") {
+    return [desc(sql<number>`count(${clickEvents.id})::int`), recentOrder]
+  }
+
+  return [recentOrder]
+}
+
+function escapeLike(value: string) {
+  return value.replace(/[\\%_]/g, (character) => `\\${character}`)
 }
 
 export function toLinkRecord(link: typeof links.$inferSelect): LinkRecord {
