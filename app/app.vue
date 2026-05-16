@@ -1,10 +1,24 @@
 <script setup lang="ts">
-const shortDomain = "somcap.com"
+interface CreatedLink {
+  slug: string
+  destination: string
+  shortUrl: string
+}
+
+const config = useRuntimeConfig()
+const shortDomain = computed(() => config.public.shortDomain)
 const colorMode = useColorMode()
+const destination = ref("")
+const createdLink = ref<CreatedLink | null>(null)
+const createErrorMessage = ref("")
+const isCreating = ref(false)
+const copyState = ref<"idle" | "copied">("idle")
 
 const colorModeTitle = computed(() =>
   colorMode.value === "dark" ? "Switch to light mode" : "Switch to dark mode"
 )
+
+const previewSlug = computed(() => createdLink.value?.slug ?? "auto")
 
 const recentLinks = [
   {
@@ -45,8 +59,6 @@ const recentLinks = [
   },
 ]
 
-const expiryOptions = ["Never", "1 day", "1 week", "1 month"]
-
 const stats = [
   { label: "Workspace links", value: "6" },
   { label: "Total clicks", value: "1,093" },
@@ -59,10 +71,35 @@ function iconButtonClass(danger = false) {
     : "text-[#6B6F76] hover:bg-[#F8FAFC] hover:text-[#111827] dark:text-[#94A3B8] dark:hover:bg-[#273447] dark:hover:text-white"
 }
 
-function expiryClass(option: string) {
-  return option === "Never"
-    ? "h-8 rounded-md bg-white px-3 text-[#0B1320] shadow-sm hover:bg-white dark:bg-[#1E293B] dark:text-white"
-    : "h-8 rounded-md px-3 text-[#6B6F76] hover:bg-white hover:text-[#111827] dark:text-[#94A3B8] dark:hover:bg-[#1E293B] dark:hover:text-white"
+async function createLink() {
+  createErrorMessage.value = ""
+  copyState.value = "idle"
+  createdLink.value = null
+  isCreating.value = true
+
+  try {
+    const response = await $fetch<{ link: CreatedLink }>("/api/links", {
+      method: "POST",
+      body: {
+        destination: destination.value,
+      },
+    })
+
+    createdLink.value = response.link
+  } catch {
+    createErrorMessage.value = "Enter a valid http or https URL."
+  } finally {
+    isCreating.value = false
+  }
+}
+
+async function copyCreatedLink() {
+  if (!createdLink.value) {
+    return
+  }
+
+  await navigator.clipboard.writeText(createdLink.value.shortUrl)
+  copyState.value = "copied"
 }
 </script>
 
@@ -121,8 +158,9 @@ function expiryClass(option: string) {
 
         <UCard
           class="gap-0 rounded-[20px] border-[#E5E7EB] bg-white p-0 shadow-[0_24px_60px_-16px_rgba(11,19,32,0.18),0_6px_16px_rgba(11,19,32,0.06)] ring-0 dark:border-[#273447] dark:bg-[#13223A] dark:shadow-black/40"
-          :ui="{ body: 'space-y-5 p-6 sm:p-8' }"
+          :ui="{ body: 'p-6 sm:p-8' }"
         >
+          <form class="space-y-5" @submit.prevent="createLink">
             <label class="block space-y-2">
               <span class="text-xs font-semibold uppercase tracking-normal text-[#6B6F76] dark:text-[#94A3B8]">
                 Long URL
@@ -130,76 +168,53 @@ function expiryClass(option: string) {
               <div class="flex items-center gap-3 rounded-[10px] border border-[#E5E7EB] bg-[#F8FAFC] px-4 py-4 shadow-[0_0_0_0_rgba(11,77,162,0)] focus-within:border-[#0B4DA2] focus-within:shadow-[0_0_0_3px_rgba(11,77,162,0.08)] dark:border-[#334155] dark:bg-[#0F172A]">
                 <UIcon name="i-lucide-link-2" class="h-5 w-5 shrink-0 text-[#6B6F76] dark:text-[#94A3B8]" />
                 <input
+                  v-model="destination"
                   class="min-w-0 flex-1 bg-transparent font-mono text-base text-[#111827] outline-none placeholder:text-[#9CA3AF] dark:text-[#F1F5F9]"
                   placeholder="https://docs.google.com/document/d/..."
                 >
               </div>
             </label>
 
-            <div class="grid gap-5 lg:grid-cols-[1fr_auto]">
-              <label class="block space-y-2">
-                <span class="flex items-baseline gap-2 text-xs font-semibold uppercase tracking-normal text-[#6B6F76] dark:text-[#94A3B8]">
-                  Custom slug
-                  <span class="text-[11px] font-normal normal-case text-[#9CA3AF]">
-                    optional
-                  </span>
-                </span>
-                <div class="flex overflow-hidden rounded-[10px] border border-[#E5E7EB] bg-white focus-within:border-[#0B4DA2] focus-within:shadow-[0_0_0_3px_rgba(11,77,162,0.08)] dark:border-[#334155] dark:bg-[#0F172A]">
-                  <span class="flex items-center border-r border-[#E5E7EB] bg-[#F8FAFC] px-3 font-mono text-sm text-[#6B6F76] dark:border-[#334155] dark:bg-[#13223A] dark:text-[#94A3B8]">
-                    {{ shortDomain }}/
-                  </span>
-                  <input
-                    class="min-w-0 flex-1 bg-transparent px-3 py-3 font-mono text-sm outline-none placeholder:text-[#9CA3AF]"
-                    placeholder="leap-204"
-                  >
-                  <UButton
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    square
-                    icon="i-lucide-settings-2"
-                    class="rounded-none border-l border-[#E5E7EB] text-[#6B6F76] hover:bg-[rgba(11,77,162,0.08)] hover:text-[#0B4DA2] dark:border-[#334155]"
-                    aria-label="Suggest slug"
-                    title="Suggest slug"
-                  />
-                </div>
-              </label>
-
-              <div class="space-y-2">
-                <span class="block text-xs font-semibold uppercase tracking-normal text-[#6B6F76] dark:text-[#94A3B8]">
-                  Expiration
-                </span>
-                <div class="inline-flex rounded-[10px] border border-[#E5E7EB] bg-[#F8FAFC] p-1 dark:border-[#334155] dark:bg-[#0F172A]">
-                  <UButton
-                    v-for="option in expiryOptions"
-                    :key="option"
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    :class="expiryClass(option)"
-                  >
-                    {{ option }}
-                  </UButton>
-                </div>
-              </div>
-            </div>
+            <p
+              v-if="createErrorMessage"
+              class="text-sm font-medium text-[#DC2626] dark:text-[#F87171]"
+              role="alert"
+            >
+              {{ createErrorMessage }}
+            </p>
 
             <div class="flex flex-col gap-4 border-t border-dashed border-[#E5E7EB] pt-5 dark:border-[#334155] sm:flex-row sm:items-center sm:justify-between">
               <div class="min-w-0">
                 <div class="text-[11px] font-semibold uppercase tracking-normal text-[#9CA3AF]">
-                  Preview
+                  Short link
                 </div>
                 <code class="mt-1 block truncate font-mono text-base text-[#6B6F76] dark:text-[#94A3B8]">
-                  {{ shortDomain }}/<b class="font-semibold text-[#0B4DA2]">q3-deck</b>
+                  {{ shortDomain }}/<b class="font-semibold text-[#0B4DA2]">{{ previewSlug }}</b>
                 </code>
               </div>
-              <UButton
-                trailing-icon="i-lucide-arrow-right"
-                class="h-11 rounded-[10px] bg-[#0B4DA2] px-5 font-semibold text-white shadow-[0_6px_14px_rgba(11,77,162,0.22)] hover:bg-[#093f84]"
-              >
-                Hop it
-              </UButton>
+              <div class="flex flex-col gap-2 sm:flex-row">
+                <UButton
+                  v-if="createdLink"
+                  type="button"
+                  icon="i-lucide-copy"
+                  variant="outline"
+                  class="h-11 rounded-[10px] px-4 font-semibold"
+                  @click="copyCreatedLink"
+                >
+                  {{ copyState === "copied" ? "Copied" : "Copy" }}
+                </UButton>
+                <UButton
+                  type="submit"
+                  trailing-icon="i-lucide-arrow-right"
+                  :loading="isCreating"
+                  :disabled="!destination || isCreating"
+                  class="h-11 rounded-[10px] bg-[#0B4DA2] px-5 font-semibold text-white shadow-[0_6px_14px_rgba(11,77,162,0.22)] hover:bg-[#093f84]"
+                >
+                  Hop it
+                </UButton>
+              </div>
             </div>
+          </form>
         </UCard>
       </section>
 
@@ -341,9 +356,12 @@ function expiryClass(option: string) {
         </a>
       </footer>
 
-      <div class="fixed bottom-6 left-1/2 hidden -translate-x-1/2 items-center gap-2 rounded-full bg-[#0B1320] px-4 py-2 text-sm font-medium text-white shadow-2xl dark:bg-white dark:text-[#0B1320] md:flex">
+      <div
+        v-if="createdLink"
+        class="fixed bottom-6 left-1/2 hidden -translate-x-1/2 items-center gap-2 rounded-full bg-[#0B1320] px-4 py-2 text-sm font-medium text-white shadow-2xl dark:bg-white dark:text-[#0B1320] md:flex"
+      >
         <UIcon name="i-lucide-check" class="h-4 w-4 text-[#16A34A] dark:text-[#22C55E]" />
-        Link created . {{ shortDomain }}/q3-deck
+        Link created . {{ createdLink.shortUrl }}
       </div>
       </div>
     </main>

@@ -2,17 +2,23 @@ export default defineNuxtConfig({
   compatibilityDate: "2026-05-16",
   modules: ["@nuxt/ui"],
   css: ["~/assets/css/globals.css"],
+  runtimeConfig: {
+    appDomain: process.env.NUXT_APP_DOMAIN,
+    shortDomain: process.env.NUXT_SHORT_DOMAIN,
+    public: {
+      shortDomain: process.env.NUXT_PUBLIC_SHORT_DOMAIN || process.env.NUXT_SHORT_DOMAIN || "localhost:3000",
+    },
+  },
   app: {
     head: {
       htmlAttrs: {
         lang: "en",
       },
-      title: "Somerset Capital Group",
+      title: "hop",
       meta: [
         {
           name: "description",
-          content:
-            "A Nuxt 4 and Vue app using the Somerset slate-blue brand system.",
+          content: "A self-hosted URL shortener.",
         },
       ],
       link: [
