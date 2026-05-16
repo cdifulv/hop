@@ -36,6 +36,36 @@ describe("anonymous Link creation and resolution", () => {
     })
   })
 
+  it("creates an anonymous Link with a custom Slug and matches it case-insensitively", async () => {
+    const repository = createMemoryLinkRepository()
+    const links = createLinkLifecycle({
+      repository,
+      validateDestination,
+      slugAllocator: createSlugAllocator({
+        repository,
+        randomBase62: () => "a1B2c3",
+      }),
+    })
+
+    const created = await links.create({
+      destination: "https://docs.example.com/roadmap",
+      slug: "Roadmap-2026",
+    })
+
+    expect(created).toEqual({
+      status: "created",
+      link: expect.objectContaining({
+        slug: "Roadmap-2026",
+        slugKey: "roadmap-2026",
+      }),
+    })
+
+    await expect(links.resolve("roadmap-2026")).resolves.toEqual({
+      status: "redirect",
+      destination: "https://docs.example.com/roadmap",
+    })
+  })
+
   it("returns a predictable not-found result for an unknown Slug", async () => {
     const repository = createMemoryLinkRepository()
     const links = createLinkLifecycle({
@@ -66,6 +96,132 @@ describe("anonymous Link creation and resolution", () => {
     await expect(links.create({ destination: "mailto:ops@example.com" })).resolves.toEqual({
       status: "rejected",
       reason: "unsupported_scheme",
+    })
+  })
+
+  it("rejects an invalid custom Slug with a specific reason", async () => {
+    const repository = createMemoryLinkRepository()
+    const links = createLinkLifecycle({
+      repository,
+      validateDestination,
+      slugAllocator: createSlugAllocator({
+        repository,
+        randomBase62: () => "a1B2c3",
+      }),
+    })
+
+    await expect(
+      links.create({
+        destination: "https://docs.example.com/deck",
+        slug: "bad slug",
+      }),
+    ).resolves.toEqual({
+      status: "rejected",
+      reason: "slug_invalid_characters",
+    })
+  })
+
+  it("rejects a custom Slug outside the allowed length", async () => {
+    const repository = createMemoryLinkRepository()
+    const links = createLinkLifecycle({
+      repository,
+      validateDestination,
+      slugAllocator: createSlugAllocator({
+        repository,
+        randomBase62: () => "a1B2c3",
+      }),
+    })
+
+    await expect(
+      links.create({
+        destination: "https://docs.example.com/deck",
+        slug: "ab",
+      }),
+    ).resolves.toEqual({
+      status: "rejected",
+      reason: "slug_too_short",
+    })
+  })
+
+  it("rejects a custom Slug longer than 64 characters", async () => {
+    const repository = createMemoryLinkRepository()
+    const links = createLinkLifecycle({
+      repository,
+      validateDestination,
+      slugAllocator: createSlugAllocator({
+        repository,
+        randomBase62: () => "a1B2c3",
+      }),
+    })
+
+    await expect(
+      links.create({
+        destination: "https://docs.example.com/deck",
+        slug: "a".repeat(65),
+      }),
+    ).resolves.toEqual({
+      status: "rejected",
+      reason: "slug_too_long",
+    })
+  })
+
+  it("rejects a custom Slug already used by a live Link", async () => {
+    const repository = createMemoryLinkRepository()
+    await repository.insert({
+      slug: "Roadmap",
+      slugKey: "roadmap",
+      destination: "https://docs.example.com/existing",
+      ownerMemberId: null,
+    })
+
+    const links = createLinkLifecycle({
+      repository,
+      validateDestination,
+      slugAllocator: createSlugAllocator({
+        repository,
+        randomBase62: () => "a1B2c3",
+      }),
+    })
+
+    await expect(
+      links.create({
+        destination: "https://docs.example.com/new",
+        slug: "roadmap",
+      }),
+    ).resolves.toEqual({
+      status: "rejected",
+      reason: "slug_taken",
+    })
+  })
+
+  it("rejects a custom Slug that belongs to a Tombstone", async () => {
+    const repository = createMemoryLinkRepository([
+      {
+        slug: "old-deck",
+        slugKey: "old-deck",
+        destination: "https://docs.example.com/old",
+        ownerMemberId: null,
+        lifecycleState: "tombstoned",
+      },
+    ])
+
+    const links = createLinkLifecycle({
+      repository,
+      validateDestination,
+      slugAllocator: createSlugAllocator({
+        repository,
+        randomBase62: () => "a1B2c3",
+      }),
+    })
+
+    await expect(
+      links.create({
+        destination: "https://docs.example.com/new",
+        slug: "OLD-DECK",
+      }),
+    ).resolves.toEqual({
+      status: "rejected",
+      reason: "slug_taken",
     })
   })
 

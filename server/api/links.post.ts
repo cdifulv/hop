@@ -5,6 +5,7 @@ import { isConfiguredHost } from "../utils/domains"
 
 interface CreateLinkBody {
   destination?: unknown
+  slug?: unknown
 }
 
 export default defineEventHandler(async (event) => {
@@ -37,6 +38,10 @@ export default defineEventHandler(async (event) => {
   const links = createProductionLinkLifecycle()
   const result = await links.create({
     destination: body.destination.trim(),
+    slug:
+      typeof body.slug === "string" && body.slug.trim() !== ""
+        ? body.slug.trim()
+        : undefined,
   })
 
   if (result.status === "rejected") {

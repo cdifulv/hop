@@ -34,7 +34,7 @@ export type CreateLinkResult =
     }
   | {
       status: "rejected"
-      reason: DestinationRejectionReason | "slug_exhausted"
+      reason: DestinationRejectionReason | SlugRejectionReason
     }
 
 export type ResolveLinkResult =
@@ -51,29 +51,34 @@ type DestinationRejectionReason = Extract<
   { status: "rejected" }
 >["reason"]
 
+type SlugRejectionReason = Exclude<
+  Extract<SlugReservation, { status: "rejected" }>["reason"],
+  "exhausted"
+> | "slug_exhausted"
+
 interface LinkLifecycleOptions {
   repository: LinkRepository
   validateDestination(input: string): DestinationValidationResult
   slugAllocator: {
-    reserve(): Promise<SlugReservation>
+    reserve(customSlug?: string): Promise<SlugReservation>
   }
 }
 
 export function createLinkLifecycle(options: LinkLifecycleOptions) {
   return {
-    async create(input: { destination: string }): Promise<CreateLinkResult> {
+    async create(input: { destination: string; slug?: string }): Promise<CreateLinkResult> {
       const destination = options.validateDestination(input.destination)
 
       if (destination.status === "rejected") {
         return destination
       }
 
-      const slug = await options.slugAllocator.reserve()
+      const slug = await options.slugAllocator.reserve(input.slug)
 
       if (slug.status === "rejected") {
         return {
           status: "rejected",
-          reason: "slug_exhausted",
+          reason: slug.reason === "exhausted" ? "slug_exhausted" : slug.reason,
         }
       }
 

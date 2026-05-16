@@ -9,6 +9,7 @@ const config = useRuntimeConfig()
 const shortDomain = computed(() => config.public.shortDomain)
 const colorMode = useColorMode()
 const destination = ref("")
+const customSlug = ref("")
 const createdLink = ref<CreatedLink | null>(null)
 const createErrorMessage = ref("")
 const isCreating = ref(false)
@@ -18,7 +19,7 @@ const colorModeTitle = computed(() =>
   colorMode.value === "dark" ? "Switch to light mode" : "Switch to dark mode"
 )
 
-const previewSlug = computed(() => createdLink.value?.slug ?? "auto")
+const previewSlug = computed(() => createdLink.value?.slug ?? (customSlug.value.trim() || "auto"))
 
 const recentLinks = [
   {
@@ -82,15 +83,59 @@ async function createLink() {
       method: "POST",
       body: {
         destination: destination.value,
+        slug: customSlug.value,
       },
     })
 
     createdLink.value = response.link
-  } catch {
-    createErrorMessage.value = "Enter a valid http or https URL."
+  } catch (error) {
+    createErrorMessage.value = createLinkErrorMessage(error)
   } finally {
     isCreating.value = false
   }
+}
+
+function createLinkErrorMessage(error: unknown) {
+  const reason = getCreateLinkErrorReason(error)
+
+  switch (reason) {
+    case "invalid_url":
+      return "Enter a valid URL."
+    case "unsupported_scheme":
+      return "Enter an http or https URL."
+    case "slug_too_short":
+      return "Use at least 3 characters for the Slug."
+    case "slug_too_long":
+      return "Use 64 characters or fewer for the Slug."
+    case "slug_invalid_characters":
+      return "Use only letters, numbers, and hyphens for the Slug."
+    case "slug_taken":
+      return "That Slug is already taken."
+    default:
+      return "Unable to create this Link."
+  }
+}
+
+function getCreateLinkErrorReason(error: unknown) {
+  if (typeof error !== "object" || error === null) {
+    return ""
+  }
+
+  if ("statusMessage" in error && typeof error.statusMessage === "string") {
+    return error.statusMessage
+  }
+
+  if (
+    "data" in error &&
+    typeof error.data === "object" &&
+    error.data !== null &&
+    "statusMessage" in error.data &&
+    typeof error.data.statusMessage === "string"
+  ) {
+    return error.data.statusMessage
+  }
+
+  return ""
 }
 
 async function copyCreatedLink() {
@@ -171,6 +216,24 @@ async function copyCreatedLink() {
                   v-model="destination"
                   class="min-w-0 flex-1 bg-transparent font-mono text-base text-[#111827] outline-none placeholder:text-[#9CA3AF] dark:text-[#F1F5F9]"
                   placeholder="https://docs.google.com/document/d/..."
+                >
+              </div>
+            </label>
+
+            <label class="block space-y-2">
+              <span class="text-xs font-semibold uppercase tracking-normal text-[#6B6F76] dark:text-[#94A3B8]">
+                Custom slug
+              </span>
+              <div class="flex items-center gap-3 rounded-[10px] border border-[#E5E7EB] bg-[#F8FAFC] px-4 py-4 shadow-[0_0_0_0_rgba(11,77,162,0)] focus-within:border-[#0B4DA2] focus-within:shadow-[0_0_0_3px_rgba(11,77,162,0.08)] dark:border-[#334155] dark:bg-[#0F172A]">
+                <UIcon name="i-lucide-tag" class="h-5 w-5 shrink-0 text-[#6B6F76] dark:text-[#94A3B8]" />
+                <span class="max-w-[45%] truncate font-mono text-sm text-[#6B6F76] dark:text-[#94A3B8]">
+                  {{ shortDomain }}/
+                </span>
+                <input
+                  v-model="customSlug"
+                  class="min-w-0 flex-1 bg-transparent font-mono text-base text-[#111827] outline-none placeholder:text-[#9CA3AF] dark:text-[#F1F5F9]"
+                  placeholder="roadmap-2026"
+                  maxlength="64"
                 >
               </div>
             </label>
