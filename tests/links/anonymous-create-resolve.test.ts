@@ -42,6 +42,77 @@ describe("anonymous Link creation and resolution", () => {
     })
   })
 
+  it("resolves a Link past its Expiration to an expired result", async () => {
+    const repository = createMemoryLinkRepository()
+    const links = createLinkLifecycle({
+      repository,
+      validateDestination,
+      slugAllocator: createSlugAllocator({
+        repository,
+        randomBase62: () => "a1B2c3",
+      }),
+      clock: {
+        now: () => new Date("2026-05-17T00:00:00.000Z"),
+      },
+    })
+
+    const created = await links.create({
+      destination: "https://docs.example.com/deck",
+      expiresAt: new Date("2026-05-16T23:59:59.000Z"),
+    })
+
+    expect(created).toEqual({
+      status: "created",
+      link: expect.objectContaining({
+        slug: "a1B2c3",
+        expiresAt: new Date("2026-05-16T23:59:59.000Z"),
+      }),
+    })
+
+    await expect(links.resolve("a1B2c3")).resolves.toEqual({
+      status: "expired",
+    })
+  })
+
+  it("uses the injected clock to resolve active and Expired Links deterministically", async () => {
+    let now = new Date("2026-05-16T12:00:00.000Z")
+    const repository = createMemoryLinkRepository()
+    const links = createLinkLifecycle({
+      repository,
+      validateDestination,
+      slugAllocator: createSlugAllocator({
+        repository,
+        randomBase62: () => "a1B2c3",
+      }),
+      clock: {
+        now: () => now,
+      },
+    })
+
+    await links.create({
+      destination: "https://docs.example.com/deck",
+      expiresAt: new Date("2026-05-16T13:00:00.000Z"),
+    })
+
+    await expect(links.resolve("a1B2c3")).resolves.toEqual({
+      status: "redirect",
+      destination: "https://docs.example.com/deck",
+    })
+
+    now = new Date("2026-05-16T13:00:00.000Z")
+
+    await expect(links.resolve("a1B2c3")).resolves.toEqual({
+      status: "expired",
+    })
+
+    now = new Date("2026-05-16T12:30:00.000Z")
+
+    await expect(links.resolve("a1B2c3")).resolves.toEqual({
+      status: "redirect",
+      destination: "https://docs.example.com/deck",
+    })
+  })
+
   it("creates an anonymous Link with a custom Slug and matches it case-insensitively", async () => {
     const repository = createMemoryLinkRepository()
     const links = createLinkLifecycle({

@@ -2,14 +2,19 @@
 interface CreatedLink {
   slug: string
   destination: string
+  expiresAt: string | null
   shortUrl: string
 }
+
+type ExpirationPreset = "none" | "1d" | "7d" | "30d" | "date"
 
 const config = useRuntimeConfig()
 const shortDomain = computed(() => config.public.shortDomain)
 const colorMode = useColorMode()
 const destination = ref("")
 const customSlug = ref("")
+const expirationPreset = ref<ExpirationPreset>("none")
+const customExpirationDate = ref("")
 const createdLink = ref<CreatedLink | null>(null)
 const createErrorMessage = ref("")
 const isCreating = ref(false)
@@ -20,6 +25,43 @@ const colorModeTitle = computed(() =>
 )
 
 const previewSlug = computed(() => createdLink.value?.slug ?? (customSlug.value.trim() || "auto"))
+
+const expirationPresets: Array<{
+  label: string
+  value: ExpirationPreset
+  icon: string
+}> = [
+  { label: "None", value: "none", icon: "i-lucide-infinity" },
+  { label: "1 day", value: "1d", icon: "i-lucide-sun" },
+  { label: "7 days", value: "7d", icon: "i-lucide-calendar-days" },
+  { label: "30 days", value: "30d", icon: "i-lucide-calendar-range" },
+  { label: "Date", value: "date", icon: "i-lucide-calendar" },
+]
+
+const expirationPreview = computed(() => {
+  if (expirationPreset.value === "none") {
+    return "No Expiration"
+  }
+
+  const expiresAt = getSelectedExpiration()
+
+  if (!expiresAt) {
+    return "Choose a date"
+  }
+
+  return `Expires ${expiresAt.toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  })}`
+})
+
+const canCreateLink = computed(
+  () =>
+    destination.value.trim() !== "" &&
+    !isCreating.value &&
+    (expirationPreset.value !== "date" || customExpirationDate.value !== ""),
+)
 
 const recentLinks = [
   {
@@ -72,6 +114,38 @@ function iconButtonClass(danger = false) {
     : "text-[#6B6F76] hover:bg-[#F8FAFC] hover:text-[#111827] dark:text-[#94A3B8] dark:hover:bg-[#273447] dark:hover:text-white"
 }
 
+function addDays(days: number) {
+  const date = new Date()
+  date.setDate(date.getDate() + days)
+  return date
+}
+
+function getSelectedExpiration() {
+  switch (expirationPreset.value) {
+    case "1d":
+      return addDays(1)
+    case "7d":
+      return addDays(7)
+    case "30d":
+      return addDays(30)
+    case "date": {
+      if (!customExpirationDate.value) {
+        return null
+      }
+
+      const [year, month, day] = customExpirationDate.value.split("-").map(Number)
+
+      if (!year || !month || !day) {
+        return null
+      }
+
+      return new Date(year, month - 1, day, 23, 59, 59, 999)
+    }
+    default:
+      return null
+  }
+}
+
 async function createLink() {
   createErrorMessage.value = ""
   copyState.value = "idle"
@@ -79,11 +153,13 @@ async function createLink() {
   isCreating.value = true
 
   try {
+    const expiresAt = getSelectedExpiration()
     const response = await $fetch<{ link: CreatedLink }>("/api/links", {
       method: "POST",
       body: {
         destination: destination.value,
         slug: customSlug.value,
+        expiresAt: expiresAt ? expiresAt.toISOString() : null,
       },
     })
 
@@ -111,6 +187,8 @@ function createLinkErrorMessage(error: unknown) {
       return "Use only letters, numbers, and hyphens for the Slug."
     case "slug_taken":
       return "That Slug is already taken."
+    case "expiration_invalid":
+      return "Choose a valid Expiration."
     default:
       return "Unable to create this Link."
   }
@@ -238,6 +316,47 @@ async function copyCreatedLink() {
               </div>
             </label>
 
+            <div class="space-y-3">
+              <div class="flex items-center justify-between gap-3">
+                <span class="text-xs font-semibold uppercase tracking-normal text-[#6B6F76] dark:text-[#94A3B8]">
+                  Expiration
+                </span>
+                <span class="text-xs font-medium text-[#6B6F76] dark:text-[#94A3B8]">
+                  {{ expirationPreview }}
+                </span>
+              </div>
+              <div class="flex flex-wrap gap-2">
+                <UButton
+                  v-for="preset in expirationPresets"
+                  :key="preset.value"
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  :icon="preset.icon"
+                  :class="[
+                    'h-9 rounded-[10px] px-3 text-sm font-semibold',
+                    expirationPreset === preset.value
+                      ? 'border-[#0B4DA2] bg-[rgba(11,77,162,0.08)] text-[#0B4DA2] hover:bg-[rgba(11,77,162,0.12)] dark:border-[#60A5FA] dark:bg-blue-400/10 dark:text-[#93C5FD]'
+                      : 'border-[#E5E7EB] bg-white text-[#6B6F76] hover:bg-[#F8FAFC] dark:border-[#334155] dark:bg-[#13223A] dark:text-[#94A3B8] dark:hover:bg-[#1E293B]',
+                  ]"
+                  @click="expirationPreset = preset.value"
+                >
+                  {{ preset.label }}
+                </UButton>
+              </div>
+              <label
+                v-if="expirationPreset === 'date'"
+                class="flex items-center gap-3 rounded-[10px] border border-[#E5E7EB] bg-[#F8FAFC] px-4 py-3 focus-within:border-[#0B4DA2] focus-within:shadow-[0_0_0_3px_rgba(11,77,162,0.08)] dark:border-[#334155] dark:bg-[#0F172A]"
+              >
+                <UIcon name="i-lucide-calendar" class="h-5 w-5 shrink-0 text-[#6B6F76] dark:text-[#94A3B8]" />
+                <input
+                  v-model="customExpirationDate"
+                  type="date"
+                  class="min-w-0 flex-1 bg-transparent text-base text-[#111827] outline-none dark:text-[#F1F5F9]"
+                >
+              </label>
+            </div>
+
             <p
               v-if="createErrorMessage"
               class="text-sm font-medium text-[#DC2626] dark:text-[#F87171]"
@@ -270,7 +389,7 @@ async function copyCreatedLink() {
                   type="submit"
                   trailing-icon="i-lucide-arrow-right"
                   :loading="isCreating"
-                  :disabled="!destination || isCreating"
+                  :disabled="!canCreateLink"
                   class="h-11 rounded-[10px] bg-[#0B4DA2] px-5 font-semibold text-white shadow-[0_6px_14px_rgba(11,77,162,0.22)] hover:bg-[#093f84]"
                 >
                   Hop it

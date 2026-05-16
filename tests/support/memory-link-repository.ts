@@ -18,6 +18,7 @@ export function createMemoryLinkRepository(seeds: MemoryLinkSeed[] = []): LinkRe
       slug: input.slug,
       slugKey: input.slugKey,
       destination: input.destination,
+      expiresAt: input.expiresAt ?? null,
       ownerMemberId: input.ownerMemberId,
       lifecycleState: input.lifecycleState ?? "active",
       createdAt: now,

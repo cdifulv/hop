@@ -8,6 +8,7 @@ export interface LinkRecord {
   slug: string
   slugKey: string
   destination: string
+  expiresAt: Date | null
   ownerMemberId: string | null
   lifecycleState: LinkLifecycleState
   createdAt: Date
@@ -18,6 +19,7 @@ export interface CreateLinkInput {
   slug: string
   slugKey: string
   destination: string
+  expiresAt?: Date | null
   ownerMemberId: string | null
 }
 
@@ -45,6 +47,9 @@ export type ResolveLinkResult =
   | {
       status: "not_found"
     }
+  | {
+      status: "expired"
+    }
 
 type DestinationRejectionReason = Extract<
   DestinationValidationResult,
@@ -64,11 +69,22 @@ interface LinkLifecycleOptions {
   slugAllocator: {
     reserve(customSlug?: string): Promise<SlugReservation>
   }
+  clock?: {
+    now(): Date
+  }
 }
 
 export function createLinkLifecycle(options: LinkLifecycleOptions) {
+  const clock = options.clock ?? {
+    now: () => new Date(),
+  }
+
   return {
-    async create(input: { destination: string; slug?: string }): Promise<CreateLinkResult> {
+    async create(input: {
+      destination: string
+      slug?: string
+      expiresAt?: Date | null
+    }): Promise<CreateLinkResult> {
       const destination = await options.validateDestination(input.destination)
 
       if (destination.status === "rejected") {
@@ -88,6 +104,7 @@ export function createLinkLifecycle(options: LinkLifecycleOptions) {
         slug: slug.slug,
         slugKey: slug.slugKey,
         destination: destination.destination,
+        expiresAt: input.expiresAt ?? null,
         ownerMemberId: null,
       })
 
@@ -102,6 +119,12 @@ export function createLinkLifecycle(options: LinkLifecycleOptions) {
       if (!link || link.lifecycleState !== "active") {
         return {
           status: "not_found",
+        }
+      }
+
+      if (link.expiresAt && link.expiresAt <= clock.now()) {
+        return {
+          status: "expired",
         }
       }
 

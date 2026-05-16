@@ -6,6 +6,31 @@ import { isConfiguredHost } from "../utils/domains"
 interface CreateLinkBody {
   destination?: unknown
   slug?: unknown
+  expiresAt?: unknown
+}
+
+function parseExpiresAt(value: unknown) {
+  if (value === undefined || value === null || value === "") {
+    return null
+  }
+
+  if (typeof value !== "string") {
+    throw createError({
+      statusCode: 422,
+      statusMessage: "expiration_invalid",
+    })
+  }
+
+  const expiresAt = new Date(value)
+
+  if (Number.isNaN(expiresAt.getTime())) {
+    throw createError({
+      statusCode: 422,
+      statusMessage: "expiration_invalid",
+    })
+  }
+
+  return expiresAt
 }
 
 export default defineEventHandler(async (event) => {
@@ -42,6 +67,7 @@ export default defineEventHandler(async (event) => {
       typeof body.slug === "string" && body.slug.trim() !== ""
         ? body.slug.trim()
         : undefined,
+    expiresAt: parseExpiresAt(body.expiresAt),
   })
 
   if (result.status === "rejected") {
@@ -60,6 +86,7 @@ export default defineEventHandler(async (event) => {
     link: {
       slug: result.link.slug,
       destination: result.link.destination,
+      expiresAt: result.link.expiresAt?.toISOString() ?? null,
       shortUrl,
     },
   }

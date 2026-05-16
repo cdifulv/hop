@@ -22,6 +22,7 @@ export function createDrizzleLinkRepository(): LinkRepository {
           slug: input.slug,
           slugKey: input.slugKey,
           destination: input.destination,
+          expiresAt: input.expiresAt ?? null,
           ownerMemberId: input.ownerMemberId,
         })
         .returning()
@@ -50,6 +51,7 @@ function toLinkRecord(link: typeof links.$inferSelect): LinkRecord {
     slug: link.slug,
     slugKey: link.slugKey,
     destination: link.destination,
+    expiresAt: link.expiresAt,
     ownerMemberId: link.ownerMemberId,
     lifecycleState: link.lifecycleState,
     createdAt: link.createdAt,
