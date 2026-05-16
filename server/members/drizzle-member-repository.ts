@@ -1,6 +1,10 @@
+import { and, eq } from "drizzle-orm"
+
 import { db } from "../db"
+import { account, ssoProvider } from "../db/schema/better-auth.generated"
 import { members } from "../db/schema/hop"
 import type { MemberRecord, MemberRepository } from "./member-identity"
+import type { MemberStatusRepository } from "./member-status"
 
 export function createDrizzleMemberRepository(): MemberRepository {
   return {
@@ -28,6 +32,50 @@ export function createDrizzleMemberRepository(): MemberRepository {
       }
 
       return toMemberRecord(member)
+    },
+  }
+}
+
+export function createDrizzleMemberStatusRepository(): MemberStatusRepository {
+  return {
+    async statusOf(member) {
+      const [record] = await db
+        .select({
+          suspended: members.suspended,
+        })
+        .from(members)
+        .where(eq(members.id, member.id))
+        .limit(1)
+
+      if (!record) {
+        return null
+      }
+
+      return record.suspended ? "suspended" : "active"
+    },
+  }
+}
+
+export function createDrizzleAuthenticatedMemberResolver() {
+  return {
+    async memberForBetterAuthUser(userId: string) {
+      const [member] = await db
+        .select({
+          id: members.id,
+        })
+        .from(account)
+        .innerJoin(ssoProvider, eq(account.providerId, ssoProvider.providerId))
+        .innerJoin(
+          members,
+          and(
+            eq(members.identityProviderIssuer, ssoProvider.issuer),
+            eq(members.identityProviderSubject, account.accountId),
+          ),
+        )
+        .where(eq(account.userId, userId))
+        .limit(1)
+
+      return member ?? null
     },
   }
 }
