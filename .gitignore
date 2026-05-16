@@ -1,12 +1,16 @@
 .DS_Store
 node_modules
 .next
+.nuxt
+.output
 out
 dist
 *.log
 .env
 .env*.local
 brand_profile.html
+.codex/
+.claude/
 CLAUDE.md
 CONTEXT.md
 docs/
