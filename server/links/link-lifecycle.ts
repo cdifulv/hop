@@ -58,7 +58,9 @@ type SlugRejectionReason = Exclude<
 
 interface LinkLifecycleOptions {
   repository: LinkRepository
-  validateDestination(input: string): DestinationValidationResult
+  validateDestination(
+    input: string,
+  ): DestinationValidationResult | Promise<DestinationValidationResult>
   slugAllocator: {
     reserve(customSlug?: string): Promise<SlugReservation>
   }
@@ -67,7 +69,7 @@ interface LinkLifecycleOptions {
 export function createLinkLifecycle(options: LinkLifecycleOptions) {
   return {
     async create(input: { destination: string; slug?: string }): Promise<CreateLinkResult> {
-      const destination = options.validateDestination(input.destination)
+      const destination = await options.validateDestination(input.destination)
 
       if (destination.status === "rejected") {
         return destination

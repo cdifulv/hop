@@ -1,9 +1,15 @@
 import { describe, expect, it } from "vitest"
 
-import { validateDestination } from "../../server/links/destination-validator"
+import { createDestinationValidator } from "../../server/links/destination-validator"
 import { createLinkLifecycle } from "../../server/links/link-lifecycle"
 import { createSlugAllocator } from "../../server/links/slug-allocator"
 import { createMemoryLinkRepository } from "../support/memory-link-repository"
+
+const validateDestination = createDestinationValidator({
+  async resolve() {
+    return ["93.184.216.34"]
+  },
+}).validate
 
 describe("anonymous Link creation and resolution", () => {
   it("creates an anonymous Link with an auto-generated Slug and resolves it to a redirect", async () => {
