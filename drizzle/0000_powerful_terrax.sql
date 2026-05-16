@@ -47,6 +47,18 @@ CREATE TABLE "verification" (
 	"updated_at" timestamp DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
+CREATE TABLE "ssoProvider" (
+	"id" text PRIMARY KEY NOT NULL,
+	"issuer" text NOT NULL,
+	"domain" text NOT NULL,
+	"oidc_config" text,
+	"saml_config" text,
+	"user_id" text NOT NULL,
+	"provider_id" text NOT NULL,
+	"organization_id" text,
+	CONSTRAINT "ssoProvider_provider_id_unique" UNIQUE("provider_id")
+);
+--> statement-breakpoint
 CREATE TABLE "browser_session_links" (
 	"browser_session_id" uuid NOT NULL,
 	"link_id" uuid NOT NULL,
@@ -112,6 +124,7 @@ CREATE TABLE "members" (
 --> statement-breakpoint
 ALTER TABLE "account" ADD CONSTRAINT "account_user_id_user_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."user"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "session" ADD CONSTRAINT "session_user_id_user_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."user"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "ssoProvider" ADD CONSTRAINT "ssoProvider_user_id_user_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."user"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "browser_session_links" ADD CONSTRAINT "browser_session_links_browser_session_id_browser_sessions_id_fk" FOREIGN KEY ("browser_session_id") REFERENCES "public"."browser_sessions"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "browser_session_links" ADD CONSTRAINT "browser_session_links_link_id_links_id_fk" FOREIGN KEY ("link_id") REFERENCES "public"."links"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "click_events" ADD CONSTRAINT "click_events_link_id_links_id_fk" FOREIGN KEY ("link_id") REFERENCES "public"."links"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint

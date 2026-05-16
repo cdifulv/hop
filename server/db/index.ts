@@ -1,6 +1,7 @@
 import { drizzle } from "drizzle-orm/postgres-js"
 import postgres from "postgres"
 
+import * as betterAuthSchema from "./schema/better-auth.generated"
 import * as hopSchema from "./schema/hop"
 
 const databaseUrl = process.env.DATABASE_URL
@@ -14,5 +15,8 @@ export const queryClient = postgres(databaseUrl, {
 })
 
 export const db = drizzle(queryClient, {
-  schema: hopSchema,
+  schema: {
+    ...betterAuthSchema,
+    ...hopSchema,
+  },
 })
