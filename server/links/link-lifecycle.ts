@@ -1,5 +1,6 @@
 import type { DestinationValidationResult } from "./destination-validator"
 import type { SlugReservation } from "./slug-allocator"
+import { can } from "./authorization-policy"
 
 export type LinkLifecycleState = "active" | "suspended" | "tombstoned"
 
@@ -15,6 +16,10 @@ export interface LinkRecord {
   updatedAt: Date
 }
 
+export type DashboardLinkRecord = LinkRecord & {
+  clickCount: number
+}
+
 export interface CreateLinkInput {
   slug: string
   slugKey: string
@@ -28,6 +33,7 @@ export interface LinkRepository {
   insert(input: CreateLinkInput): Promise<LinkRecord>
   findBySlugKey(slugKey: string): Promise<LinkRecord | null>
   findById(id: string): Promise<LinkRecord | null>
+  listForMember(memberId: string): Promise<DashboardLinkRecord[]>
   tombstoneBySlugKey(slugKey: string): Promise<LinkRecord | null>
 }
 
@@ -95,6 +101,7 @@ export function createLinkLifecycle(options: LinkLifecycleOptions) {
       slug?: string
       expiresAt?: Date | null
       browserSessionToken?: string | null
+      ownerMemberId?: string | null
     }): Promise<CreateLinkResult> {
       const destination = await options.validateDestination(input.destination)
 
@@ -116,10 +123,10 @@ export function createLinkLifecycle(options: LinkLifecycleOptions) {
         slugKey: slug.slugKey,
         destination: destination.destination,
         expiresAt: input.expiresAt ?? null,
-        ownerMemberId: null,
+        ownerMemberId: input.ownerMemberId ?? null,
       })
 
-      if (input.browserSessionToken && options.browserSessions) {
+      if (!input.ownerMemberId && input.browserSessionToken && options.browserSessions) {
         await options.browserSessions.track(input.browserSessionToken, link.id)
       }
 
@@ -172,6 +179,41 @@ export function createLinkLifecycle(options: LinkLifecycleOptions) {
       return {
         status: "claimed",
         links: await options.browserSessions.claimLinks(token, member.id),
+      }
+    },
+    async listMemberLinks(member: { id: string }): Promise<DashboardLinkRecord[]> {
+      const actor = { type: "member" as const, memberId: member.id }
+      const links = await options.repository.listForMember(member.id)
+
+      return links.filter((link) => can(actor, "view", link))
+    },
+    async deleteMemberLink(
+      member: { id: string },
+      slug: string,
+    ): Promise<{ status: "deleted"; link: LinkRecord } | { status: "not_found" }> {
+      const link = await options.repository.findBySlugKey(slug.toLowerCase())
+
+      if (
+        !link ||
+        link.lifecycleState === "tombstoned" ||
+        !can({ type: "member", memberId: member.id }, "delete", link)
+      ) {
+        return {
+          status: "not_found",
+        }
+      }
+
+      const deleted = await options.repository.tombstoneBySlugKey(link.slugKey)
+
+      if (!deleted) {
+        return {
+          status: "not_found",
+        }
+      }
+
+      return {
+        status: "deleted",
+        link: deleted,
       }
     },
     async resolve(slug: string): Promise<ResolveLinkResult> {

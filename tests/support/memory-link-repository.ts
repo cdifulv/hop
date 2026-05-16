@@ -7,6 +7,8 @@ import type {
 
 type MemoryLinkSeed = CreateLinkInput & {
   lifecycleState?: LinkRecord["lifecycleState"]
+  clickCount?: number
+  createdAt?: Date
 }
 
 type MutableMemoryLinkRepository = LinkRepository & {
@@ -28,7 +30,7 @@ export function createMemoryLinkRepository(
       expiresAt: input.expiresAt ?? null,
       ownerMemberId: input.ownerMemberId,
       lifecycleState: input.lifecycleState ?? "active",
-      createdAt: now,
+      createdAt: input.createdAt ?? now,
       updatedAt: now,
     }
 
@@ -50,6 +52,18 @@ export function createMemoryLinkRepository(
     },
     async findById(id: string) {
       return [...links.values()].find((link) => link.id === id) ?? null
+    },
+    async listForMember(memberId: string) {
+      return [...links.values()]
+        .filter(
+          (link) => link.ownerMemberId === memberId && link.lifecycleState !== "tombstoned",
+        )
+        .map((link) => ({
+          ...link,
+          clickCount:
+            seeds.find((seed) => seed.slugKey === link.slugKey)?.clickCount ?? 0,
+        }))
+        .sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime())
     },
     async tombstoneBySlugKey(slugKey: string) {
       const link = links.get(slugKey)

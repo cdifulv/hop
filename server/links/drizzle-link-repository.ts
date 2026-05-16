@@ -1,8 +1,8 @@
-import { eq } from "drizzle-orm"
+import { desc, eq, sql } from "drizzle-orm"
 
 import { db } from "../db"
-import { links } from "../db/schema/hop"
-import type { LinkRecord, LinkRepository } from "./link-lifecycle"
+import { clickEvents, links } from "../db/schema/hop"
+import type { DashboardLinkRecord, LinkRecord, LinkRepository } from "./link-lifecycle"
 
 export function createDrizzleLinkRepository(): LinkRepository {
   return {
@@ -46,6 +46,25 @@ export function createDrizzleLinkRepository(): LinkRepository {
       const [link] = await db.select().from(links).where(eq(links.id, id)).limit(1)
 
       return link ? toLinkRecord(link) : null
+    },
+    async listForMember(memberId) {
+      const rows = await db
+        .select({
+          link: links,
+          clickCount: sql<number>`count(${clickEvents.id})::int`,
+        })
+        .from(links)
+        .leftJoin(clickEvents, eq(clickEvents.linkId, links.id))
+        .where(eq(links.ownerMemberId, memberId))
+        .groupBy(links.id)
+        .orderBy(desc(links.createdAt))
+
+      return rows
+        .map((row): DashboardLinkRecord => ({
+          ...toLinkRecord(row.link),
+          clickCount: row.clickCount,
+        }))
+        .filter((link) => link.lifecycleState !== "tombstoned")
     },
     async tombstoneBySlugKey(slugKey) {
       const [link] = await db

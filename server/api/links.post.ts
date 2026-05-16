@@ -1,7 +1,9 @@
-import { createError, defineEventHandler, readBody } from "h3"
+import { createError, defineEventHandler, readBody, toWebRequest } from "h3"
 
+import { auth } from "../auth/config"
 import { toLinkResponse } from "../links/response"
 import { createProductionLinkLifecycle } from "../links/service"
+import { createProductionAuthenticatedMemberResolver } from "../members/service"
 import { getOrCreateBrowserSessionToken } from "../utils/browser-session-cookie"
 import { isConfiguredHost } from "../utils/domains"
 
@@ -64,6 +66,14 @@ export default defineEventHandler(async (event) => {
 
   const links = createProductionLinkLifecycle()
   const browserSessionToken = getOrCreateBrowserSessionToken(event)
+  const request = toWebRequest(event)
+  const session = await auth.api.getSession({
+    headers: request.headers,
+  })
+  const authUserId = session?.user?.id
+  const member = authUserId
+    ? await createProductionAuthenticatedMemberResolver().memberForBetterAuthUser(authUserId)
+    : null
   const result = await links.create({
     destination: body.destination.trim(),
     slug:
@@ -72,6 +82,7 @@ export default defineEventHandler(async (event) => {
         : undefined,
     expiresAt: parseExpiresAt(body.expiresAt),
     browserSessionToken,
+    ownerMemberId: member?.id ?? null,
   })
 
   if (result.status === "rejected") {

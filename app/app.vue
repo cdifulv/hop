@@ -3,6 +3,9 @@ interface CreatedLink {
   slug: string
   destination: string
   expiresAt: string | null
+  expirationStatus: "none" | "active" | "expired"
+  createdAt: string
+  clickCount: number
   shortUrl: string
 }
 
@@ -10,6 +13,7 @@ interface SessionLink extends CreatedLink {
   host: string
   title: string
   expiry: string | null
+  created: string
 }
 
 type ExpirationPreset = "none" | "1d" | "7d" | "30d" | "date"
@@ -25,6 +29,7 @@ const createdLink = ref<CreatedLink | null>(null)
 const sessionLinks = ref<SessionLink[]>([])
 const createErrorMessage = ref("")
 const sessionErrorMessage = ref("")
+const listScope = ref<"member" | "browser">("browser")
 const isCreating = ref(false)
 const deletingSlug = ref("")
 const copyState = ref<"idle" | "copied">("idle")
@@ -74,11 +79,21 @@ const canCreateLink = computed(
 )
 
 const stats = computed(() => [
-  { label: "Session links", value: String(sessionLinks.value.length) },
-  { label: "Total clicks", value: "0" },
+  {
+    label: listScope.value === "member" ? "Member links" : "Session links",
+    value: String(sessionLinks.value.length),
+  },
+  {
+    label: "Total clicks",
+    value: String(
+      sessionLinks.value.reduce((total, link) => total + link.clickCount, 0),
+    ),
+  },
   {
     label: "Active expiring",
-    value: String(sessionLinks.value.filter((link) => link.expiresAt).length),
+    value: String(
+      sessionLinks.value.filter((link) => link.expirationStatus === "active").length,
+    ),
   },
 ])
 
@@ -206,11 +221,32 @@ async function loadSessionLinks() {
   sessionErrorMessage.value = ""
 
   try {
-    const response = await $fetch<{ links: CreatedLink[] }>("/api/links")
+    const response = await fetchLinks()
     sessionLinks.value = response.links.map(toSessionLink)
   } catch {
-    sessionErrorMessage.value = "Unable to load this Browser session's Links."
+    sessionErrorMessage.value = "Unable to load Links."
   }
+}
+
+async function fetchLinks() {
+  try {
+    const response = await $fetch<{ links: CreatedLink[] }>("/api/member/links")
+    listScope.value = "member"
+    return response
+  } catch (error) {
+    if (!isAuthenticationRequired(error)) {
+      throw error
+    }
+  }
+
+  const response = await $fetch<{ links: CreatedLink[] }>("/api/links")
+  listScope.value = "browser"
+  return response
+}
+
+function isAuthenticationRequired(error: unknown) {
+  const reason = getCreateLinkErrorReason(error)
+  return reason === "authentication_required"
 }
 
 function upsertSessionLink(link: CreatedLink) {
@@ -226,6 +262,7 @@ function toSessionLink(link: CreatedLink): SessionLink {
     host: destinationHost(link.destination),
     title: link.destination,
     expiry: expirationLabel(link.expiresAt),
+    created: createdLabel(link.createdAt),
   }
 }
 
@@ -239,13 +276,13 @@ function destinationHost(value: string) {
 
 function expirationLabel(value: string | null) {
   if (!value) {
-    return null
+    return "No Expiration"
   }
 
   const expiresAt = new Date(value)
 
   if (Number.isNaN(expiresAt.getTime())) {
-    return null
+    return "No Expiration"
   }
 
   return `expires ${expiresAt.toLocaleDateString(undefined, {
@@ -253,6 +290,28 @@ function expirationLabel(value: string | null) {
     day: "numeric",
     year: "numeric",
   })}`
+}
+
+function expirationStatusLabel(link: SessionLink) {
+  if (link.expirationStatus === "expired") {
+    return "Expired"
+  }
+
+  return link.expiry ?? "No Expiration"
+}
+
+function createdLabel(value: string) {
+  const createdAt = new Date(value)
+
+  if (Number.isNaN(createdAt.getTime())) {
+    return ""
+  }
+
+  return createdAt.toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  })
 }
 
 async function copyLink(link: CreatedLink) {
@@ -265,14 +324,16 @@ async function deleteSessionLink(link: SessionLink) {
   deletingSlug.value = link.slug
 
   try {
-    await $fetch(`/api/links/${encodeURIComponent(link.slug)}`, {
+    const endpoint = listScope.value === "member" ? "/api/member/links" : "/api/links"
+
+    await $fetch(`${endpoint}/${encodeURIComponent(link.slug)}`, {
       method: "DELETE",
     })
     sessionLinks.value = sessionLinks.value.filter(
       (sessionLink) => sessionLink.slug !== link.slug,
     )
   } catch {
-    sessionErrorMessage.value = "Unable to delete this Link from the Browser session."
+    sessionErrorMessage.value = "Unable to delete this Link."
   } finally {
     deletingSlug.value = ""
   }
@@ -476,7 +537,7 @@ async function deleteSessionLink(link: SessionLink) {
               Recent hops
             </h2>
             <p class="mt-1 text-sm text-[#6B6F76] dark:text-[#94A3B8]">
-              {{ sessionLinks.length }} links in this Browser session
+              {{ sessionLinks.length }} links in this {{ listScope === "member" ? "Member dashboard" : "Browser session" }}
             </p>
           </div>
           <div class="flex flex-col gap-3 sm:flex-row sm:items-center">
@@ -544,12 +605,11 @@ async function deleteSessionLink(link: SessionLink) {
                     <span class="font-semibold">{{ link.slug }}</span>
                   </a>
                   <UBadge
-                    v-if="link.expiry"
                     variant="outline"
                     leading-icon="i-lucide-calendar-clock"
                     class="h-6 rounded-md border-[#E5E7EB] bg-[#F8FAFC] text-[#6B6F76] dark:border-[#334155] dark:bg-[#1E293B] dark:text-[#94A3B8]"
                   >
-                    {{ link.expiry }}
+                    {{ expirationStatusLabel(link) }}
                   </UBadge>
                 </div>
                 <div class="flex min-w-0 gap-2 text-sm text-[#6B6F76] dark:text-[#94A3B8]">
@@ -564,7 +624,7 @@ async function deleteSessionLink(link: SessionLink) {
               <div class="flex gap-7 lg:justify-end">
                 <div class="min-w-14 lg:text-right">
                   <div class="font-serif text-[22px] font-bold leading-none text-[#0B1320] dark:text-white">
-                    0
+                    {{ link.clickCount }}
                   </div>
                   <div class="mt-1 text-[11px] font-medium uppercase tracking-normal text-[#9CA3AF]">
                     clicks
@@ -572,7 +632,7 @@ async function deleteSessionLink(link: SessionLink) {
                 </div>
                 <div class="min-w-16 lg:text-right">
                   <div class="text-sm font-medium text-[#6B6F76] dark:text-[#94A3B8]">
-                    now
+                    {{ link.created }}
                   </div>
                   <div class="mt-1 text-[11px] font-medium uppercase tracking-normal text-[#9CA3AF]">
                     created
