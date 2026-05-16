@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto"
 
-import { and, desc, eq, isNull } from "drizzle-orm"
+import { and, desc, eq, inArray, isNull } from "drizzle-orm"
 
 import { db } from "../db"
 import { browserSessionLinks, browserSessions, links } from "../db/schema/hop"
@@ -38,6 +38,45 @@ export function createDrizzleBrowserSessionRepository(): BrowserSessionRepositor
         .orderBy(desc(links.createdAt))
 
       return rows.map((row) => toLinkRecord(row.link))
+    },
+    async claimLinks(token, memberId) {
+      const rows = await db
+        .select({ link: links })
+        .from(browserSessionLinks)
+        .innerJoin(browserSessions, eq(browserSessionLinks.browserSessionId, browserSessions.id))
+        .innerJoin(links, eq(browserSessionLinks.linkId, links.id))
+        .where(
+          and(
+            eq(browserSessions.tokenHash, hashToken(token)),
+            isNull(links.ownerMemberId),
+            eq(links.lifecycleState, "active"),
+          ),
+        )
+
+      if (rows.length === 0) {
+        return []
+      }
+
+      const now = new Date()
+      const claimed = await db
+        .update(links)
+        .set({
+          ownerMemberId: memberId,
+          updatedAt: now,
+        })
+        .where(
+          and(
+            inArray(
+              links.id,
+              rows.map((row) => row.link.id),
+            ),
+            isNull(links.ownerMemberId),
+            eq(links.lifecycleState, "active"),
+          ),
+        )
+        .returning()
+
+      return claimed.map(toLinkRecord)
     },
     async tombstoneLink(token, slugKey) {
       const [row] = await db

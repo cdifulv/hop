@@ -3,7 +3,7 @@ import { randomBytes } from "node:crypto"
 import type { H3Event } from "h3"
 import { getCookie, setCookie } from "h3"
 
-const browserSessionCookieName = "hop_browser_session"
+export const browserSessionCookieName = "hop_browser_session"
 const browserSessionMaxAge = 60 * 60 * 24 * 365
 
 export function getBrowserSessionToken(event: H3Event) {

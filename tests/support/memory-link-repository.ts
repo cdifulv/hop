@@ -9,7 +9,13 @@ type MemoryLinkSeed = CreateLinkInput & {
   lifecycleState?: LinkRecord["lifecycleState"]
 }
 
-export function createMemoryLinkRepository(seeds: MemoryLinkSeed[] = []): LinkRepository {
+type MutableMemoryLinkRepository = LinkRepository & {
+  replace(link: LinkRecord): void
+}
+
+export function createMemoryLinkRepository(
+  seeds: MemoryLinkSeed[] = [],
+): MutableMemoryLinkRepository {
   const links = new Map<string, LinkRecord>()
   const now = new Date("2026-05-16T00:00:00.000Z")
 
@@ -61,6 +67,9 @@ export function createMemoryLinkRepository(seeds: MemoryLinkSeed[] = []): LinkRe
       links.set(slugKey, tombstoned)
       return tombstoned
     },
+    replace(link) {
+      links.set(link.slugKey, link)
+    },
   }
 }
 
@@ -104,6 +113,20 @@ export function createMemoryBrowserSessionRepository(
       linksFor(token).add(linkId)
     },
     listLinks,
+    async claimLinks(token, memberId) {
+      const links = await listLinks(token)
+
+      return links.map((link) => {
+        const claimed: LinkRecord = {
+          ...link,
+          ownerMemberId: memberId,
+          updatedAt: new Date("2026-05-16T00:00:00.000Z"),
+        }
+
+        linkRepository.replace(claimed)
+        return claimed
+      })
+    },
     async tombstoneLink(token, slugKey) {
       const links = await listLinks(token)
       const link = links.find((link) => link.slugKey === slugKey)

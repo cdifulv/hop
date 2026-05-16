@@ -34,6 +34,7 @@ export interface LinkRepository {
 export interface BrowserSessionRepository {
   track(token: string, linkId: string): Promise<void>
   listLinks(token: string): Promise<LinkRecord[]>
+  claimLinks(token: string, memberId: string): Promise<LinkRecord[]>
   tombstoneLink(token: string, slugKey: string): Promise<LinkRecord | null>
 }
 
@@ -155,6 +156,22 @@ export function createLinkLifecycle(options: LinkLifecycleOptions) {
       return {
         status: "deleted",
         link,
+      }
+    },
+    async claimBrowserSessionLinks(
+      token: string,
+      member: { id: string },
+    ): Promise<{ status: "claimed"; links: LinkRecord[] }> {
+      if (!options.browserSessions) {
+        return {
+          status: "claimed",
+          links: [],
+        }
+      }
+
+      return {
+        status: "claimed",
+        links: await options.browserSessions.claimLinks(token, member.id),
       }
     },
     async resolve(slug: string): Promise<ResolveLinkResult> {

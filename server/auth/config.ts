@@ -1,11 +1,19 @@
 import { betterAuth } from "better-auth"
+import { createAuthMiddleware } from "better-auth/api"
 import { drizzleAdapter } from "@better-auth/drizzle-adapter"
 import { sso } from "@better-auth/sso"
 
 import { db } from "../db/index"
-import { createProductionMemberIdentity } from "../members/service"
+import { createProductionLinkLifecycle } from "../links/service"
+import {
+  createProductionAuthenticatedMemberResolver,
+  createProductionMemberIdentity,
+} from "../members/service"
+import { browserSessionCookieName } from "../utils/browser-session-cookie"
 
 const memberIdentity = createProductionMemberIdentity()
+const authenticatedMembers = createProductionAuthenticatedMemberResolver()
+const links = createProductionLinkLifecycle()
 
 export const auth = betterAuth({
   baseURL: authBaseUrl(),
@@ -15,6 +23,24 @@ export const auth = betterAuth({
   }),
   emailAndPassword: {
     enabled: true,
+  },
+  hooks: {
+    after: createAuthMiddleware(async (ctx) => {
+      const newSession = ctx.context.newSession
+      const browserSessionToken = ctx.getCookie(browserSessionCookieName)
+
+      if (!newSession || !browserSessionToken) {
+        return
+      }
+
+      const member = await authenticatedMembers.memberForBetterAuthUser(newSession.user.id)
+
+      if (!member) {
+        return
+      }
+
+      await links.claimBrowserSessionLinks(browserSessionToken, member)
+    }),
   },
   plugins: [
     sso({
