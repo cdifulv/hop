@@ -1,9 +1,13 @@
 import {
   createDrizzleAuthenticatedMemberResolver,
   createDrizzleMemberRepository,
+  createDrizzleMemberSessionInvalidator,
+  createDrizzleMemberSuspensionRepository,
   createDrizzleMemberStatusRepository,
 } from "./drizzle-member-repository"
+import { createProductionLinkLifecycle } from "../links/service"
 import { createMemberIdentity } from "./member-identity"
+import { createMemberSuspension } from "./member-suspension"
 import { createMemberStatus } from "./member-status"
 
 export function createProductionMemberIdentity() {
@@ -15,6 +19,14 @@ export function createProductionMemberIdentity() {
 export function createProductionMemberStatus() {
   return createMemberStatus({
     repository: createDrizzleMemberStatusRepository(),
+  })
+}
+
+export function createProductionMemberSuspension() {
+  return createMemberSuspension({
+    members: createDrizzleMemberSuspensionRepository(),
+    links: createProductionLinkLifecycle(),
+    sessions: createDrizzleMemberSessionInvalidator(),
   })
 }
 

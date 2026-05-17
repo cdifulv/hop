@@ -20,6 +20,9 @@ export interface SsoMemberInput {
 }
 
 export interface MemberRepository {
+  findBySsoIdentity(
+    input: Pick<SsoMemberInput, "issuer" | "subject">,
+  ): Promise<MemberRecord | null>
   upsertFromSso(input: SsoMemberInput): Promise<MemberRecord>
 }
 
@@ -33,12 +36,24 @@ export function createMemberIdentity(options: MemberIdentityOptions) {
       assertPresent(input.issuer, "Identity provider issuer is required")
       assertPresent(input.subject, "Identity provider subject is required")
 
-      return options.repository.upsertFromSso({
+      const existing = await options.repository.findBySsoIdentity(input)
+
+      if (existing?.suspended) {
+        throw new Error("Member is suspended")
+      }
+
+      const member = await options.repository.upsertFromSso({
         issuer: input.issuer,
         subject: input.subject,
         email: input.email ?? null,
         displayName: input.displayName ?? null,
       })
+
+      if (member.suspended) {
+        throw new Error("Member is suspended")
+      }
+
+      return member
     },
   }
 }

@@ -53,6 +53,8 @@ export interface LinkRepository {
   ): Promise<LinkRecord | null>
   suspendBySlugKey(slugKey: string): Promise<LinkRecord | null>
   unsuspendBySlugKey(slugKey: string): Promise<LinkRecord | null>
+  suspendByOwnerMemberId(memberId: string): Promise<LinkRecord[]>
+  unsuspendByOwnerMemberId(memberId: string): Promise<LinkRecord[]>
   tombstoneBySlugKey(slugKey: string): Promise<LinkRecord | null>
 }
 
@@ -411,6 +413,12 @@ export function createLinkLifecycle(options: LinkLifecycleOptions) {
         status: "unsuspended",
         link: unsuspended,
       }
+    },
+    async suspendMemberLinks(member: { id: string }): Promise<LinkRecord[]> {
+      return options.repository.suspendByOwnerMemberId(member.id)
+    },
+    async unsuspendMemberLinks(member: { id: string }): Promise<LinkRecord[]> {
+      return options.repository.unsuspendByOwnerMemberId(member.id)
     },
     async updateMemberLinkExpiration(
       member: { id: string },

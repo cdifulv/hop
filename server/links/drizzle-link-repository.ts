@@ -1,4 +1,4 @@
-import { and, desc, eq, ilike, or, sql } from "drizzle-orm"
+import { and, desc, eq, ilike, ne, or, sql } from "drizzle-orm"
 
 import { db } from "../db"
 import { clickEvents, links } from "../db/schema/hop"
@@ -128,6 +128,21 @@ export function createDrizzleLinkRepository(): LinkRepository {
 
       return link ? toLinkRecord(link) : null
     },
+    async suspendByOwnerMemberId(memberId) {
+      const suspended = await db
+        .update(links)
+        .set({
+          lifecycleState: "suspended",
+          suspendedAt: new Date(),
+          updatedAt: new Date(),
+        })
+        .where(
+          and(eq(links.ownerMemberId, memberId), ne(links.lifecycleState, "tombstoned")),
+        )
+        .returning()
+
+      return suspended.map(toLinkRecord)
+    },
     async unsuspendBySlugKey(slugKey) {
       const [link] = await db
         .update(links)
@@ -140,6 +155,21 @@ export function createDrizzleLinkRepository(): LinkRepository {
         .returning()
 
       return link ? toLinkRecord(link) : null
+    },
+    async unsuspendByOwnerMemberId(memberId) {
+      const unsuspended = await db
+        .update(links)
+        .set({
+          lifecycleState: "active",
+          suspendedAt: null,
+          updatedAt: new Date(),
+        })
+        .where(
+          and(eq(links.ownerMemberId, memberId), ne(links.lifecycleState, "tombstoned")),
+        )
+        .returning()
+
+      return unsuspended.map(toLinkRecord)
     },
   }
 }

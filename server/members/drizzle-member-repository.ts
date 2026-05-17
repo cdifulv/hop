@@ -1,13 +1,31 @@
-import { and, eq } from "drizzle-orm"
+import { and, eq, inArray } from "drizzle-orm"
 
 import { db } from "../db"
-import { account, ssoProvider } from "../db/schema/better-auth.generated"
+import { account, session, ssoProvider } from "../db/schema/better-auth.generated"
 import { members } from "../db/schema/hop"
 import type { MemberRecord, MemberRepository } from "./member-identity"
+import type {
+  MemberSessionInvalidator,
+  MemberSuspensionRepository,
+} from "./member-suspension"
 import type { MemberStatusRepository } from "./member-status"
 
 export function createDrizzleMemberRepository(): MemberRepository {
   return {
+    async findBySsoIdentity(input) {
+      const [member] = await db
+        .select()
+        .from(members)
+        .where(
+          and(
+            eq(members.identityProviderIssuer, input.issuer),
+            eq(members.identityProviderSubject, input.subject),
+          ),
+        )
+        .limit(1)
+
+      return member ? toMemberRecord(member) : null
+    },
     async upsertFromSso(input) {
       const [member] = await db
         .insert(members)
@@ -52,6 +70,66 @@ export function createDrizzleMemberStatusRepository(): MemberStatusRepository {
       }
 
       return record.suspended ? "suspended" : "active"
+    },
+  }
+}
+
+export function createDrizzleMemberSuspensionRepository(): MemberSuspensionRepository {
+  return {
+    async suspendMember(id, suspendedAt) {
+      const [member] = await db
+        .update(members)
+        .set({
+          suspended: true,
+          suspendedAt,
+          updatedAt: suspendedAt,
+        })
+        .where(eq(members.id, id))
+        .returning()
+
+      return member ? toMemberRecord(member) : null
+    },
+    async unsuspendMember(id) {
+      const [member] = await db
+        .update(members)
+        .set({
+          suspended: false,
+          suspendedAt: null,
+          updatedAt: new Date(),
+        })
+        .where(eq(members.id, id))
+        .returning()
+
+      return member ? toMemberRecord(member) : null
+    },
+  }
+}
+
+export function createDrizzleMemberSessionInvalidator(): MemberSessionInvalidator {
+  return {
+    async invalidateSessions(member) {
+      const betterAuthUsers = await db
+        .select({
+          userId: account.userId,
+        })
+        .from(account)
+        .innerJoin(ssoProvider, eq(account.providerId, ssoProvider.providerId))
+        .innerJoin(
+          members,
+          and(
+            eq(members.identityProviderIssuer, ssoProvider.issuer),
+            eq(members.identityProviderSubject, account.accountId),
+          ),
+        )
+        .where(eq(members.id, member.id))
+
+      const userIds = betterAuthUsers.map((user) => user.userId)
+
+      if (userIds.length === 0) {
+        return
+      }
+
+      await db.delete(session).where(inArray(session.userId, userIds))
     },
   }
 }

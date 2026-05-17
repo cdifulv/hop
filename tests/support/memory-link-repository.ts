@@ -119,6 +119,29 @@ export function createMemoryLinkRepository(
       links.set(slugKey, suspended)
       return suspended
     },
+    async suspendByOwnerMemberId(memberId: string) {
+      const suspended: LinkRecord[] = []
+
+      for (const link of links.values()) {
+        if (
+          link.ownerMemberId !== memberId ||
+          link.lifecycleState === "tombstoned"
+        ) {
+          continue
+        }
+
+        const updated: LinkRecord = {
+          ...link,
+          lifecycleState: "suspended",
+          updatedAt: now,
+        }
+
+        links.set(link.slugKey, updated)
+        suspended.push(updated)
+      }
+
+      return suspended
+    },
     async unsuspendBySlugKey(slugKey: string) {
       const link = links.get(slugKey)
 
@@ -134,6 +157,29 @@ export function createMemoryLinkRepository(
 
       links.set(slugKey, active)
       return active
+    },
+    async unsuspendByOwnerMemberId(memberId: string) {
+      const unsuspended: LinkRecord[] = []
+
+      for (const link of links.values()) {
+        if (
+          link.ownerMemberId !== memberId ||
+          link.lifecycleState === "tombstoned"
+        ) {
+          continue
+        }
+
+        const updated: LinkRecord = {
+          ...link,
+          lifecycleState: "active",
+          updatedAt: now,
+        }
+
+        links.set(link.slugKey, updated)
+        unsuspended.push(updated)
+      }
+
+      return unsuspended
     },
     async retireBySlugKey(slugKey: string) {
       const link = links.get(slugKey)

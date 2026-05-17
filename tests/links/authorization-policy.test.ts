@@ -55,4 +55,26 @@ describe("Link authorization policy", () => {
 
     expect(can(admin, "update_expiration", ownedLink)).toBe(false)
   })
+
+  it("denies every Link action for a Suspended Member", () => {
+    const suspendedMember = {
+      type: "member" as const,
+      memberId: "member-1",
+      suspended: true,
+    }
+    const suspendedAdmin = {
+      type: "member" as const,
+      memberId: "admin-1",
+      isAdmin: true,
+      suspended: true,
+    }
+
+    expect(can(suspendedMember, "view", ownedLink)).toBe(false)
+    expect(can(suspendedMember, "delete", ownedLink)).toBe(false)
+    expect(can(suspendedMember, "update_expiration", ownedLink)).toBe(false)
+    expect(can(suspendedMember, "suspend", ownedLink)).toBe(false)
+    expect(can(suspendedAdmin, "view", ownedLink)).toBe(false)
+    expect(can(suspendedAdmin, "delete", ownedLink)).toBe(false)
+    expect(can(suspendedAdmin, "suspend", ownedLink)).toBe(false)
+  })
 })
