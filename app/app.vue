@@ -226,6 +226,10 @@ function createLinkErrorMessage(error: unknown) {
       return "That Slug is already taken."
     case "expiration_invalid":
       return "Choose a valid Expiration."
+    case "anonymous_creation_disabled":
+      return "Anonymous Link creation is disabled."
+    case "rate_limited":
+      return "Too many Links were created from this source. Try again later."
     default:
       return "Unable to create this Link."
   }
@@ -234,6 +238,29 @@ function createLinkErrorMessage(error: unknown) {
 function getCreateLinkErrorReason(error: unknown) {
   if (typeof error !== "object" || error === null) {
     return ""
+  }
+
+  if (
+    "data" in error &&
+    typeof error.data === "object" &&
+    error.data !== null &&
+    "reason" in error.data &&
+    typeof error.data.reason === "string"
+  ) {
+    return error.data.reason
+  }
+
+  if (
+    "data" in error &&
+    typeof error.data === "object" &&
+    error.data !== null &&
+    "data" in error.data &&
+    typeof error.data.data === "object" &&
+    error.data.data !== null &&
+    "reason" in error.data.data &&
+    typeof error.data.data.reason === "string"
+  ) {
+    return error.data.data.reason
   }
 
   if ("statusMessage" in error && typeof error.statusMessage === "string") {

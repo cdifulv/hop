@@ -1,5 +1,6 @@
 import type { ClickRequestMeta } from "./click-recorder"
 import type { DestinationValidationResult } from "./destination-validator"
+import type { RateLimiter } from "./rate-limiter"
 import type { SlugReservation } from "./slug-allocator"
 import { can } from "./authorization-policy"
 
@@ -68,6 +69,11 @@ export type CreateLinkResult =
       status: "rejected"
       reason: DestinationRejectionReason | SlugRejectionReason
     }
+  | {
+      status: "rejected"
+      reason: AnonymousCreationRejectionReason
+      retryAfter?: Date
+    }
 
 export type ResolveLinkResult =
   | {
@@ -91,12 +97,20 @@ type SlugRejectionReason = Exclude<
   "exhausted"
 > | "slug_exhausted"
 
+type AnonymousCreationRejectionReason =
+  | "anonymous_creation_disabled"
+  | "rate_limited"
+
 interface LinkLifecycleOptions {
   repository: LinkRepository
   browserSessions?: BrowserSessionRepository
   clickRecorder?: {
     record(link: LinkRecord, meta: ClickRequestMeta): Promise<unknown>
   }
+  anonymousCreation?: {
+    enabled(): Promise<boolean> | boolean
+  }
+  anonymousCreationRateLimiter?: RateLimiter
   validateDestination(
     input: string,
   ): DestinationValidationResult | Promise<DestinationValidationResult>
@@ -120,7 +134,39 @@ export function createLinkLifecycle(options: LinkLifecycleOptions) {
       expiresAt?: Date | null
       browserSessionToken?: string | null
       ownerMemberId?: string | null
+      creationSourceKey?: string | null
     }): Promise<CreateLinkResult> {
+      const ownerMemberId = input.ownerMemberId ?? null
+
+      if (!ownerMemberId && options.anonymousCreation) {
+        const anonymousCreationEnabled = await options.anonymousCreation.enabled()
+
+        if (!anonymousCreationEnabled) {
+          return {
+            status: "rejected",
+            reason: "anonymous_creation_disabled",
+          }
+        }
+      }
+
+      if (
+        !ownerMemberId &&
+        input.creationSourceKey &&
+        options.anonymousCreationRateLimiter
+      ) {
+        const rateLimit = await options.anonymousCreationRateLimiter.check(
+          input.creationSourceKey,
+        )
+
+        if (rateLimit.status === "limited") {
+          return {
+            status: "rejected",
+            reason: "rate_limited",
+            retryAfter: rateLimit.retryAfter,
+          }
+        }
+      }
+
       const destination = await options.validateDestination(input.destination)
 
       if (destination.status === "rejected") {
@@ -141,10 +187,10 @@ export function createLinkLifecycle(options: LinkLifecycleOptions) {
         slugKey: slug.slugKey,
         destination: destination.destination,
         expiresAt: input.expiresAt ?? null,
-        ownerMemberId: input.ownerMemberId ?? null,
+        ownerMemberId,
       })
 
-      if (!input.ownerMemberId && input.browserSessionToken && options.browserSessions) {
+      if (!ownerMemberId && input.browserSessionToken && options.browserSessions) {
         await options.browserSessions.track(input.browserSessionToken, link.id)
       }
 

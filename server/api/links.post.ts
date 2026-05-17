@@ -1,4 +1,12 @@
-import { createError, defineEventHandler, readBody, toWebRequest } from "h3"
+import {
+  createError,
+  defineEventHandler,
+  getHeader,
+  readBody,
+  setHeader,
+  toWebRequest,
+} from "h3"
+import type { H3Event } from "h3"
 
 import { auth } from "../auth/config"
 import { toLinkResponse } from "../links/response"
@@ -83,9 +91,37 @@ export default defineEventHandler(async (event) => {
     expiresAt: parseExpiresAt(body.expiresAt),
     browserSessionToken,
     ownerMemberId: member?.id ?? null,
+    creationSourceKey: creationSourceKey(event),
   })
 
   if (result.status === "rejected") {
+    if (result.reason === "anonymous_creation_disabled") {
+      throw createError({
+        statusCode: 403,
+        statusMessage: "Anonymous Link creation is disabled",
+        data: {
+          reason: result.reason,
+          message: "Anonymous Link creation has been disabled by an Admin.",
+        },
+      })
+    }
+
+    if (result.reason === "rate_limited") {
+      if (result.retryAfter) {
+        setHeader(event, "retry-after", result.retryAfter.toUTCString())
+      }
+
+      throw createError({
+        statusCode: 429,
+        statusMessage: "Anonymous Link creation rate limit exceeded",
+        data: {
+          reason: result.reason,
+          message: "Too many anonymous Links were created from this source. Try again later.",
+          retryAfter: result.retryAfter?.toISOString(),
+        },
+      })
+    }
+
     throw createError({
       statusCode: 422,
       statusMessage: result.reason,
@@ -98,3 +134,15 @@ export default defineEventHandler(async (event) => {
     link: toLinkResponse(result.link, shortHost),
   }
 })
+
+function creationSourceKey(event: H3Event) {
+  const forwardedFor = getHeader(event, "x-forwarded-for")
+
+  if (forwardedFor) {
+    return forwardedFor.split(",")[0]?.trim() || "unknown"
+  }
+
+  return (
+    getHeader(event, "x-real-ip") ?? event.node.req.socket.remoteAddress ?? "unknown"
+  )
+}
