@@ -75,6 +75,31 @@ function renderExpired(event: Parameters<typeof setResponseStatus>[0]) {
   )
 }
 
+function renderSuspended(event: Parameters<typeof setResponseStatus>[0]) {
+  setResponseStatus(event, 410, "Link Unavailable")
+  setHeader(event, "content-type", "text/html; charset=utf-8")
+
+  return send(
+    event,
+    [
+      "<!doctype html>",
+      '<html lang="en">',
+      "<head>",
+      '<meta charset="utf-8">',
+      '<meta name="viewport" content="width=device-width, initial-scale=1">',
+      "<title>Link unavailable - hop</title>",
+      "</head>",
+      "<body>",
+      "<main>",
+      "<h1>Link unavailable</h1>",
+      "<p>This hop is currently unavailable.</p>",
+      "</main>",
+      "</body>",
+      "</html>",
+    ].join(""),
+  )
+}
+
 function renderTombstoned(event: Parameters<typeof setResponseStatus>[0]) {
   setResponseStatus(event, 410, "Link No Longer Available")
   setHeader(event, "content-type", "text/html; charset=utf-8")
@@ -143,6 +168,10 @@ export default defineEventHandler(async (event) => {
 
   if (result.status === "expired") {
     return renderExpired(event)
+  }
+
+  if (result.status === "suspended") {
+    return renderSuspended(event)
   }
 
   if (result.status === "tombstoned") {

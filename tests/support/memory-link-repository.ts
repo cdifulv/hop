@@ -103,6 +103,38 @@ export function createMemoryLinkRepository(
       links.set(slugKey, tombstoned)
       return tombstoned
     },
+    async suspendBySlugKey(slugKey: string) {
+      const link = links.get(slugKey)
+
+      if (!link || link.lifecycleState === "tombstoned") {
+        return null
+      }
+
+      const suspended: LinkRecord = {
+        ...link,
+        lifecycleState: "suspended",
+        updatedAt: now,
+      }
+
+      links.set(slugKey, suspended)
+      return suspended
+    },
+    async unsuspendBySlugKey(slugKey: string) {
+      const link = links.get(slugKey)
+
+      if (!link || link.lifecycleState === "tombstoned") {
+        return null
+      }
+
+      const active: LinkRecord = {
+        ...link,
+        lifecycleState: "active",
+        updatedAt: now,
+      }
+
+      links.set(slugKey, active)
+      return active
+    },
     async retireBySlugKey(slugKey: string) {
       const link = links.get(slugKey)
 

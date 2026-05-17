@@ -51,6 +51,8 @@ export interface LinkRepository {
     slugKey: string,
     expiresAt: Date | null,
   ): Promise<LinkRecord | null>
+  suspendBySlugKey(slugKey: string): Promise<LinkRecord | null>
+  unsuspendBySlugKey(slugKey: string): Promise<LinkRecord | null>
   tombstoneBySlugKey(slugKey: string): Promise<LinkRecord | null>
 }
 
@@ -86,6 +88,9 @@ export type ResolveLinkResult =
     }
   | {
       status: "expired"
+    }
+  | {
+      status: "suspended"
     }
   | {
       status: "tombstoned"
@@ -337,6 +342,76 @@ export function createLinkLifecycle(options: LinkLifecycleOptions) {
         link: deleted,
       }
     },
+    async suspendAdminLink(
+      member: { id: string; isAdmin?: boolean },
+      slug: string,
+    ): Promise<
+      { status: "suspended"; link: LinkRecord } | { status: "not_found" }
+    > {
+      const link = await options.repository.findBySlugKey(slug.toLowerCase())
+
+      if (
+        !link ||
+        link.lifecycleState === "tombstoned" ||
+        !can(
+          { type: "member", memberId: member.id, isAdmin: member.isAdmin },
+          "suspend",
+          link,
+        )
+      ) {
+        return {
+          status: "not_found",
+        }
+      }
+
+      const suspended = await options.repository.suspendBySlugKey(link.slugKey)
+
+      if (!suspended) {
+        return {
+          status: "not_found",
+        }
+      }
+
+      return {
+        status: "suspended",
+        link: suspended,
+      }
+    },
+    async unsuspendAdminLink(
+      member: { id: string; isAdmin?: boolean },
+      slug: string,
+    ): Promise<
+      { status: "unsuspended"; link: LinkRecord } | { status: "not_found" }
+    > {
+      const link = await options.repository.findBySlugKey(slug.toLowerCase())
+
+      if (
+        !link ||
+        link.lifecycleState === "tombstoned" ||
+        !can(
+          { type: "member", memberId: member.id, isAdmin: member.isAdmin },
+          "suspend",
+          link,
+        )
+      ) {
+        return {
+          status: "not_found",
+        }
+      }
+
+      const unsuspended = await options.repository.unsuspendBySlugKey(link.slugKey)
+
+      if (!unsuspended) {
+        return {
+          status: "not_found",
+        }
+      }
+
+      return {
+        status: "unsuspended",
+        link: unsuspended,
+      }
+    },
     async updateMemberLinkExpiration(
       member: { id: string },
       slug: string,
@@ -388,9 +463,9 @@ export function createLinkLifecycle(options: LinkLifecycleOptions) {
         }
       }
 
-      if (link.lifecycleState !== "active") {
+      if (link.lifecycleState === "suspended") {
         return {
-          status: "not_found",
+          status: "suspended",
         }
       }
 

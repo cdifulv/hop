@@ -39,13 +39,15 @@ describe("Link authorization policy", () => {
     ).toBe(false)
   })
 
-  it("allows an Admin to view and delete any Link, including the Anonymous pool", () => {
+  it("allows an Admin to view, delete, and suspend any Link, including the Anonymous pool", () => {
     const admin = { type: "member" as const, memberId: "admin-1", isAdmin: true }
 
     expect(can(admin, "view", ownedLink)).toBe(true)
     expect(can(admin, "delete", ownedLink)).toBe(true)
+    expect(can(admin, "suspend", ownedLink)).toBe(true)
     expect(can(admin, "view", anonymousLink)).toBe(true)
     expect(can(admin, "delete", anonymousLink)).toBe(true)
+    expect(can(admin, "suspend", anonymousLink)).toBe(true)
   })
 
   it("does not let Admin moderation rights change another Member's Expiration", () => {

@@ -115,6 +115,32 @@ export function createDrizzleLinkRepository(): LinkRepository {
 
       return link ? toLinkRecord(link) : null
     },
+    async suspendBySlugKey(slugKey) {
+      const [link] = await db
+        .update(links)
+        .set({
+          lifecycleState: "suspended",
+          suspendedAt: new Date(),
+          updatedAt: new Date(),
+        })
+        .where(eq(links.slugKey, slugKey))
+        .returning()
+
+      return link ? toLinkRecord(link) : null
+    },
+    async unsuspendBySlugKey(slugKey) {
+      const [link] = await db
+        .update(links)
+        .set({
+          lifecycleState: "active",
+          suspendedAt: null,
+          updatedAt: new Date(),
+        })
+        .where(eq(links.slugKey, slugKey))
+        .returning()
+
+      return link ? toLinkRecord(link) : null
+    },
   }
 }
 
