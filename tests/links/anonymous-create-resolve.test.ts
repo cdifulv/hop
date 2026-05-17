@@ -302,6 +302,30 @@ describe("anonymous Link creation and resolution", () => {
     })
   })
 
+  it("resolves a Tombstoned Link to a no-longer-available result", async () => {
+    const repository = createMemoryLinkRepository([
+      {
+        slug: "old-deck",
+        slugKey: "old-deck",
+        destination: "https://docs.example.com/old",
+        ownerMemberId: null,
+        lifecycleState: "tombstoned",
+      },
+    ])
+    const links = createLinkLifecycle({
+      repository,
+      validateDestination,
+      slugAllocator: createSlugAllocator({
+        repository,
+        randomBase62: () => "a1B2c3",
+      }),
+    })
+
+    await expect(links.resolve("old-deck")).resolves.toEqual({
+      status: "tombstoned",
+    })
+  })
+
   it("tries another base62 Slug when the first generated Slug is already reserved", async () => {
     const repository = createMemoryLinkRepository()
     await repository.insert({

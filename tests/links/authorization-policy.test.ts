@@ -25,6 +25,9 @@ describe("Link authorization policy", () => {
     expect(can({ type: "anonymous" }, "update_expiration", anonymousLink)).toBe(
       false,
     )
+    expect(
+      can({ type: "member", memberId: "member-2" }, "delete", anonymousLink),
+    ).toBe(false)
     expect(can({ type: "member", memberId: "member-2" }, "view", ownedLink)).toBe(
       false,
     )
@@ -34,5 +37,20 @@ describe("Link authorization policy", () => {
     expect(
       can({ type: "member", memberId: "member-2" }, "update_expiration", ownedLink),
     ).toBe(false)
+  })
+
+  it("allows an Admin to view and delete any Link, including the Anonymous pool", () => {
+    const admin = { type: "member" as const, memberId: "admin-1", isAdmin: true }
+
+    expect(can(admin, "view", ownedLink)).toBe(true)
+    expect(can(admin, "delete", ownedLink)).toBe(true)
+    expect(can(admin, "view", anonymousLink)).toBe(true)
+    expect(can(admin, "delete", anonymousLink)).toBe(true)
+  })
+
+  it("does not let Admin moderation rights change another Member's Expiration", () => {
+    const admin = { type: "member" as const, memberId: "admin-1", isAdmin: true }
+
+    expect(can(admin, "update_expiration", ownedLink)).toBe(false)
   })
 })

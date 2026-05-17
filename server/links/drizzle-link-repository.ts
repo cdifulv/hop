@@ -72,6 +72,24 @@ export function createDrizzleLinkRepository(): LinkRepository {
         }))
         .filter((link) => link.lifecycleState !== "tombstoned")
     },
+    async listAll(options = {}) {
+      const search = memberLinkSearch(options)
+      const rows = await db
+        .select({
+          link: links,
+          clickCount: sql<number>`count(${clickEvents.id})::int`,
+        })
+        .from(links)
+        .leftJoin(clickEvents, eq(clickEvents.linkId, links.id))
+        .where(search)
+        .groupBy(links.id)
+        .orderBy(...memberLinkOrder(options))
+
+      return rows.map((row): DashboardLinkRecord => ({
+        ...toLinkRecord(row.link),
+        clickCount: row.clickCount,
+      }))
+    },
     async updateExpirationBySlugKey(slugKey, expiresAt) {
       const [link] = await db
         .update(links)

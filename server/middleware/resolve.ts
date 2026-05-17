@@ -75,6 +75,31 @@ function renderExpired(event: Parameters<typeof setResponseStatus>[0]) {
   )
 }
 
+function renderTombstoned(event: Parameters<typeof setResponseStatus>[0]) {
+  setResponseStatus(event, 410, "Link No Longer Available")
+  setHeader(event, "content-type", "text/html; charset=utf-8")
+
+  return send(
+    event,
+    [
+      "<!doctype html>",
+      '<html lang="en">',
+      "<head>",
+      '<meta charset="utf-8">',
+      '<meta name="viewport" content="width=device-width, initial-scale=1">',
+      "<title>Link no longer available - hop</title>",
+      "</head>",
+      "<body>",
+      "<main>",
+      "<h1>Link no longer available</h1>",
+      "<p>This hop was deleted and no longer redirects.</p>",
+      "</main>",
+      "</body>",
+      "</html>",
+    ].join(""),
+  )
+}
+
 export default defineEventHandler(async (event) => {
   if (event.method !== "GET" && event.method !== "HEAD") {
     return
@@ -118,6 +143,10 @@ export default defineEventHandler(async (event) => {
 
   if (result.status === "expired") {
     return renderExpired(event)
+  }
+
+  if (result.status === "tombstoned") {
+    return renderTombstoned(event)
   }
 
   // Short domain has no app to fall back to — own the Not Found response.

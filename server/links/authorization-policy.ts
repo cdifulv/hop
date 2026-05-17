@@ -5,6 +5,7 @@ export type LinkActor =
   | {
       type: "member"
       memberId: string
+      isAdmin?: boolean
     }
 
 export type LinkAction = "view" | "delete" | "update_expiration"
@@ -14,7 +15,13 @@ interface AuthorizableLink {
 }
 
 export function can(actor: LinkActor, action: LinkAction, link: AuthorizableLink) {
-  void action
+  if (actor.type === "anonymous") {
+    return false
+  }
 
-  return actor.type === "member" && link.ownerMemberId === actor.memberId
+  if (actor.isAdmin && (action === "view" || action === "delete")) {
+    return true
+  }
+
+  return link.ownerMemberId === actor.memberId
 }

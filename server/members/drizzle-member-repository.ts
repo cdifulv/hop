@@ -62,6 +62,7 @@ export function createDrizzleAuthenticatedMemberResolver() {
       const [member] = await db
         .select({
           id: members.id,
+          isAdmin: members.isAdmin,
         })
         .from(account)
         .innerJoin(ssoProvider, eq(account.providerId, ssoProvider.providerId))

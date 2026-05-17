@@ -14,6 +14,7 @@ interface AuthenticatedSession {
 
 interface GuardedMember {
   id: string
+  isAdmin?: boolean
 }
 
 interface AuthenticatedRequestGuardOptions extends MemberStatusLookup {

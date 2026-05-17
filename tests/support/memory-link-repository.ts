@@ -14,12 +14,14 @@ type MemoryLinkSeed = CreateLinkInput & {
 
 type MutableMemoryLinkRepository = LinkRepository & {
   replace(link: LinkRecord): void
+  retireBySlugKey(slugKey: string): Promise<LinkRecord | null>
 }
 
 export function createMemoryLinkRepository(
   seeds: MemoryLinkSeed[] = [],
 ): MutableMemoryLinkRepository {
   const links = new Map<string, LinkRecord>()
+  const retiredSlugKeys = new Set<string>()
   const now = new Date("2026-05-16T00:00:00.000Z")
 
   function addLink(input: MemoryLinkSeed, index: number) {
@@ -43,7 +45,7 @@ export function createMemoryLinkRepository(
 
   return {
     async slugKeyExists(slugKey) {
-      return links.has(slugKey)
+      return links.has(slugKey) || retiredSlugKeys.has(slugKey)
     },
     async insert(input: CreateLinkInput) {
       return addLink(input, links.size)
@@ -60,11 +62,13 @@ export function createMemoryLinkRepository(
           (link) => link.ownerMemberId === memberId && link.lifecycleState !== "tombstoned",
         )
         .filter((link) => matchesSearch(link, options.search))
-        .map((link) => ({
-          ...link,
-          clickCount:
-            seeds.find((seed) => seed.slugKey === link.slugKey)?.clickCount ?? 0,
-        }))
+        .map((link) => withClickCount(link, seeds))
+        .sort((left, right) => compareDashboardLinks(left, right, options))
+    },
+    async listAll(options: ListMemberLinksOptions = {}) {
+      return [...links.values()]
+        .filter((link) => matchesSearch(link, options.search))
+        .map((link) => withClickCount(link, seeds))
         .sort((left, right) => compareDashboardLinks(left, right, options))
     },
     async updateExpirationBySlugKey(slugKey: string, expiresAt: Date | null) {
@@ -99,9 +103,33 @@ export function createMemoryLinkRepository(
       links.set(slugKey, tombstoned)
       return tombstoned
     },
+    async retireBySlugKey(slugKey: string) {
+      const link = links.get(slugKey)
+
+      if (!link) {
+        return null
+      }
+
+      const tombstoned: LinkRecord = {
+        ...link,
+        lifecycleState: "tombstoned",
+        updatedAt: now,
+      }
+
+      links.delete(slugKey)
+      retiredSlugKeys.add(slugKey)
+      return tombstoned
+    },
     replace(link) {
       links.set(link.slugKey, link)
     },
+  }
+}
+
+function withClickCount(link: LinkRecord, seeds: MemoryLinkSeed[]) {
+  return {
+    ...link,
+    clickCount: seeds.find((seed) => seed.slugKey === link.slugKey)?.clickCount ?? 0,
   }
 }
 
@@ -205,7 +233,7 @@ export function createMemoryBrowserSessionRepository(
         return null
       }
 
-      return linkRepository.tombstoneBySlugKey(slugKey)
+      return linkRepository.retireBySlugKey(slugKey)
     },
   }
 }
