@@ -1,5 +1,6 @@
 import {
   defineEventHandler,
+  getHeader,
   getRequestURL,
   send,
   sendRedirect,
@@ -102,7 +103,14 @@ export default defineEventHandler(async (event) => {
     return
   }
 
-  const result = await createProductionLinkLifecycle().resolve(slug)
+  const result = await createProductionLinkLifecycle().resolve(slug, {
+    referrer: getHeader(event, "referer") ?? getHeader(event, "referrer"),
+    userAgent: getHeader(event, "user-agent"),
+    ip:
+      getHeader(event, "x-forwarded-for") ??
+      getHeader(event, "x-real-ip") ??
+      event.node.req.socket.remoteAddress,
+  })
 
   if (result.status === "redirect") {
     return sendRedirect(event, result.destination, 302)

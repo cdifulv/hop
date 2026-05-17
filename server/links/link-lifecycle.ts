@@ -1,3 +1,4 @@
+import type { ClickRequestMeta } from "./click-recorder"
 import type { DestinationValidationResult } from "./destination-validator"
 import type { SlugReservation } from "./slug-allocator"
 import { can } from "./authorization-policy"
@@ -93,6 +94,9 @@ type SlugRejectionReason = Exclude<
 interface LinkLifecycleOptions {
   repository: LinkRepository
   browserSessions?: BrowserSessionRepository
+  clickRecorder?: {
+    record(link: LinkRecord, meta: ClickRequestMeta): Promise<unknown>
+  }
   validateDestination(
     input: string,
   ): DestinationValidationResult | Promise<DestinationValidationResult>
@@ -266,7 +270,10 @@ export function createLinkLifecycle(options: LinkLifecycleOptions) {
         link: updated,
       }
     },
-    async resolve(slug: string): Promise<ResolveLinkResult> {
+    async resolve(
+      slug: string,
+      clickMeta: ClickRequestMeta = {},
+    ): Promise<ResolveLinkResult> {
       const link = await options.repository.findBySlugKey(slug.toLowerCase())
 
       if (!link || link.lifecycleState !== "active") {
@@ -279,6 +286,10 @@ export function createLinkLifecycle(options: LinkLifecycleOptions) {
         return {
           status: "expired",
         }
+      }
+
+      if (options.clickRecorder) {
+        void options.clickRecorder.record(link, clickMeta).catch(() => {})
       }
 
       return {
