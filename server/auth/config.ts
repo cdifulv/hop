@@ -1,8 +1,9 @@
 import { betterAuth } from "better-auth"
-import { createAuthMiddleware } from "better-auth/api"
+import { APIError, createAuthMiddleware } from "better-auth/api"
 import { drizzleAdapter } from "@better-auth/drizzle-adapter"
 import { sso } from "@better-auth/sso"
 
+import { createProductionDeploymentAdmin } from "../admin/service"
 import { db } from "../db/index"
 import { createProductionLinkLifecycle } from "../links/service"
 import {
@@ -14,6 +15,7 @@ import { browserSessionCookieName } from "../utils/browser-session-cookie"
 const memberIdentity = createProductionMemberIdentity()
 const authenticatedMembers = createProductionAuthenticatedMemberResolver()
 const links = createProductionLinkLifecycle()
+const deploymentAdmin = createProductionDeploymentAdmin()
 
 export const auth = betterAuth({
   baseURL: authBaseUrl(),
@@ -23,8 +25,24 @@ export const auth = betterAuth({
   }),
   emailAndPassword: {
     enabled: true,
+    disableSignUp: true,
   },
   hooks: {
+    before: createAuthMiddleware(async (ctx) => {
+      if (ctx.path !== "/sign-in/email") {
+        return
+      }
+
+      const email = typeof ctx.body?.email === "string" ? ctx.body.email : ""
+
+      if (await deploymentAdmin.canAttemptBootstrapCredentialSignIn(email)) {
+        return
+      }
+
+      throw new APIError("FORBIDDEN", {
+        message: "Bootstrap admin credential is disabled",
+      })
+    }),
     after: createAuthMiddleware(async (ctx) => {
       const newSession = ctx.context.newSession
       const browserSessionToken = ctx.getCookie(browserSessionCookieName)
