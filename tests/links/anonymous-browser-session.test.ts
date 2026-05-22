@@ -81,7 +81,7 @@ describe("anonymous Browser session management", () => {
 
     await expect(links.listBrowserSessionLinks("browser-a")).resolves.toEqual([])
     await expect(links.resolve("session-deck")).resolves.toEqual({
-      status: "not_found",
+      status: "tombstoned",
     })
   })
 })

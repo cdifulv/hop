@@ -12,16 +12,23 @@ type MemoryLinkSeed = CreateLinkInput & {
   createdAt?: Date
 }
 
-type MutableMemoryLinkRepository = LinkRepository & {
-  replace(link: LinkRecord): void
-  retireBySlugKey(slugKey: string): Promise<LinkRecord | null>
+// Sibling in-memory fakes (the Browser-session repository) need to coordinate
+// over the same Link store. The store is exposed only through this
+// module-private symbol so the returned value still satisfies *only* the
+// `LinkRepository` interface for every external consumer — the off-interface
+// `retireBySlugKey`/`retiredSlugKeys`/`replace` escape hatches are gone, so the
+// fake can no longer diverge from the Drizzle adapter on the ADR-0003
+// Slug-retirement boundary (plan #4).
+const linkStore = Symbol("memoryLinkStore")
+
+interface MemoryLinkStore {
+  [linkStore]: Map<string, LinkRecord>
 }
 
 export function createMemoryLinkRepository(
   seeds: MemoryLinkSeed[] = [],
-): MutableMemoryLinkRepository {
+): LinkRepository {
   const links = new Map<string, LinkRecord>()
-  const retiredSlugKeys = new Set<string>()
   const now = new Date("2026-05-16T00:00:00.000Z")
 
   function addLink(input: MemoryLinkSeed, index: number) {
@@ -43,9 +50,12 @@ export function createMemoryLinkRepository(
 
   seeds.forEach((seed, index) => addLink(seed, index))
 
-  return {
+  const repository: LinkRepository & MemoryLinkStore = {
+    [linkStore]: links,
     async slugKeyExists(slugKey) {
-      return links.has(slugKey) || retiredSlugKeys.has(slugKey)
+      // A Tombstoned Link keeps its row (ADR-0003: the Slug stays reserved),
+      // exactly like the Drizzle adapter — no separate retired-Slug set.
+      return links.has(slugKey)
     },
     async insert(input: CreateLinkInput) {
       return addLink(input, links.size)
@@ -74,7 +84,7 @@ export function createMemoryLinkRepository(
     async updateExpirationBySlugKey(slugKey: string, expiresAt: Date | null) {
       const link = links.get(slugKey)
 
-      if (!link) {
+      if (!link || link.lifecycleState === "tombstoned") {
         return null
       }
 
@@ -181,27 +191,9 @@ export function createMemoryLinkRepository(
 
       return unsuspended
     },
-    async retireBySlugKey(slugKey: string) {
-      const link = links.get(slugKey)
-
-      if (!link) {
-        return null
-      }
-
-      const tombstoned: LinkRecord = {
-        ...link,
-        lifecycleState: "tombstoned",
-        updatedAt: now,
-      }
-
-      links.delete(slugKey)
-      retiredSlugKeys.add(slugKey)
-      return tombstoned
-    },
-    replace(link) {
-      links.set(link.slugKey, link)
-    },
   }
+
+  return repository
 }
 
 function withClickCount(link: LinkRecord, seeds: MemoryLinkSeed[]) {
@@ -249,11 +241,10 @@ function destinationHost(destination: string) {
   }
 }
 
-type MemoryLinkRepository = ReturnType<typeof createMemoryLinkRepository>
-
 export function createMemoryBrowserSessionRepository(
-  linkRepository: MemoryLinkRepository,
+  linkRepository: LinkRepository,
 ): BrowserSessionRepository {
+  const links = (linkRepository as LinkRepository & MemoryLinkStore)[linkStore]
   const sessionLinks = new Map<string, Set<string>>()
 
   function linksFor(token: string) {
@@ -274,13 +265,15 @@ export function createMemoryBrowserSessionRepository(
       return []
     }
 
-    const links = await Promise.all(
+    const sessionLinkRecords = await Promise.all(
       [...linkIds].map((linkId) => linkRepository.findById(linkId)),
     )
 
-    return links.filter(
+    return sessionLinkRecords.filter(
       (link): link is LinkRecord =>
-        Boolean(link) && link.ownerMemberId === null && link.lifecycleState === "active",
+        link !== null &&
+        link.ownerMemberId === null &&
+        link.lifecycleState === "active",
     )
   }
 
@@ -290,28 +283,30 @@ export function createMemoryBrowserSessionRepository(
     },
     listLinks,
     async claimLinks(token, memberId) {
-      const links = await listLinks(token)
+      const claimable = await listLinks(token)
 
-      return links.map((link) => {
+      return claimable.map((link) => {
         const claimed: LinkRecord = {
           ...link,
           ownerMemberId: memberId,
           updatedAt: new Date("2026-05-16T00:00:00.000Z"),
         }
 
-        linkRepository.replace(claimed)
+        links.set(claimed.slugKey, claimed)
         return claimed
       })
     },
     async tombstoneLink(token, slugKey) {
-      const links = await listLinks(token)
-      const link = links.find((link) => link.slugKey === slugKey)
+      // Go through the same `tombstoneBySlugKey` boundary as the Drizzle
+      // adapter: the row is kept and marked Tombstoned, the Slug stays
+      // reserved (ADR-0003), and resolution reports `tombstoned`.
+      const owned = await listLinks(token)
 
-      if (!link) {
+      if (!owned.some((link) => link.slugKey === slugKey)) {
         return null
       }
 
-      return linkRepository.retireBySlugKey(slugKey)
+      return linkRepository.tombstoneBySlugKey(slugKey)
     },
   }
 }

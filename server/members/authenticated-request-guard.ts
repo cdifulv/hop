@@ -1,37 +1,30 @@
 import { createError } from "h3"
 
-import type { MemberStatusLookup } from "./member-status"
+import type {
+  AuthenticatedMember,
+  AuthenticatedMemberAccess,
+} from "./authenticated-member"
 
 interface AuthenticatedRequest {
   headers: Headers
 }
 
-interface AuthenticatedSession {
-  user?: {
-    id?: string
-  }
-}
-
-interface GuardedMember {
-  id: string
-  isAdmin?: boolean
-}
-
-interface AuthenticatedRequestGuardOptions extends MemberStatusLookup {
-  sessionFor(request: AuthenticatedRequest): Promise<AuthenticatedSession | null>
-  memberForSession(
-    request: AuthenticatedRequest,
-    session: AuthenticatedSession,
-  ): Promise<GuardedMember | null>
+interface AuthenticatedRequestGuardOptions {
+  access: AuthenticatedMemberAccess
   forceSignOut(request: AuthenticatedRequest): Promise<void>
 }
 
 interface GuardedRequestContext {
   request: AuthenticatedRequest
-  session: AuthenticatedSession
-  member: GuardedMember
+  member: AuthenticatedMember
 }
 
+/**
+ * The single ADR-0008 enforcement point. The guard resolves the one Member
+ * seam, rejects (and reactively force-signs-out a Suspended Member, ADR-0007)
+ * before any handler runs, and otherwise emits an `AuthenticatedMember` whose
+ * existence *is* the proof that live status was checked.
+ */
 export function createAuthenticatedMemberRequestGuard(
   options: AuthenticatedRequestGuardOptions,
 ) {
@@ -39,27 +32,16 @@ export function createAuthenticatedMemberRequestGuard(
     request: AuthenticatedRequest,
     handle: (context: GuardedRequestContext) => Promise<Result>,
   ) {
-    const session = await options.sessionFor(request)
+    const resolution = await options.access.authenticatedMemberFor(request)
 
-    if (!session?.user?.id) {
+    if (resolution.status === "unauthenticated") {
       throw createError({
         statusCode: 401,
         statusMessage: "authentication_required",
       })
     }
 
-    const member = await options.memberForSession(request, session)
-
-    if (!member) {
-      throw createError({
-        statusCode: 401,
-        statusMessage: "authentication_required",
-      })
-    }
-
-    const status = await options.statusOf(member)
-
-    if (status === "suspended") {
+    if (resolution.status === "suspended") {
       await options.forceSignOut(request)
       throw createError({
         statusCode: 401,
@@ -69,8 +51,7 @@ export function createAuthenticatedMemberRequestGuard(
 
     return handle({
       request,
-      session,
-      member,
+      member: resolution.member,
     })
   }
 }

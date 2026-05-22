@@ -3,12 +3,12 @@ import { and, eq, inArray } from "drizzle-orm"
 import { db } from "../db"
 import { account, session, ssoProvider } from "../db/schema/better-auth.generated"
 import { members } from "../db/schema/hop"
+import type { MemberStatusRepository } from "./authenticated-member"
 import type { MemberRecord, MemberRepository } from "./member-identity"
 import type {
   MemberSessionInvalidator,
   MemberSuspensionRepository,
-} from "./member-suspension"
-import type { MemberStatusRepository } from "./member-status"
+} from "../moderation/member-moderation"
 
 export function createDrizzleMemberRepository(): MemberRepository {
   return {
@@ -65,8 +65,11 @@ export function createDrizzleMemberStatusRepository(): MemberStatusRepository {
         .where(eq(members.id, member.id))
         .limit(1)
 
+      // Repository-contract guarantee (ADR-0008 / plan #3): never null. A
+      // missing Member row is treated as "active" here, not via a downstream
+      // `?? "active"` shim.
       if (!record) {
-        return null
+        return "active"
       }
 
       return record.suspended ? "suspended" : "active"

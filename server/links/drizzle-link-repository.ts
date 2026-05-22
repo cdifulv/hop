@@ -97,7 +97,9 @@ export function createDrizzleLinkRepository(): LinkRepository {
           expiresAt,
           updatedAt: new Date(),
         })
-        .where(eq(links.slugKey, slugKey))
+        .where(
+          and(eq(links.slugKey, slugKey), ne(links.lifecycleState, "tombstoned")),
+        )
         .returning()
 
       return link ? toLinkRecord(link) : null
@@ -123,7 +125,9 @@ export function createDrizzleLinkRepository(): LinkRepository {
           suspendedAt: new Date(),
           updatedAt: new Date(),
         })
-        .where(eq(links.slugKey, slugKey))
+        .where(
+          and(eq(links.slugKey, slugKey), ne(links.lifecycleState, "tombstoned")),
+        )
         .returning()
 
       return link ? toLinkRecord(link) : null
@@ -151,7 +155,9 @@ export function createDrizzleLinkRepository(): LinkRepository {
           suspendedAt: null,
           updatedAt: new Date(),
         })
-        .where(eq(links.slugKey, slugKey))
+        .where(
+          and(eq(links.slugKey, slugKey), ne(links.lifecycleState, "tombstoned")),
+        )
         .returning()
 
       return link ? toLinkRecord(link) : null

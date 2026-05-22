@@ -54,6 +54,10 @@ _Avoid_: user, workspace, owner, account
 A Member with elevated rights: configures the Deployment (Identity provider, Short domain), can view and delete any Link including the Anonymous pool, and can disable anonymous Link creation entirely (a kill switch; redirects keep working). Anonymous creation is rate-limited per source regardless. An Admin does not gate Membership — that is delegated to the Identity provider's own scoping.
 _Avoid_: operator (the operator deploys infra; an Admin administers from within the app), superuser, root
 
+**Moderation**:
+An Admin's explicit intervention on a Link or Member to stop abuse: **Suspending** (a reversible halt) or deleting a Link (permanent, leaving a **Tombstone**). Suspending a **Member** cascades as one act — their status flips to Suspended, every Link they own is Suspended, and their existing sessions are invalidated immediately. Moderation is always an explicit Admin act, never an automatic side effect (in particular, never a consequence of Identity-provider removal).
+_Avoid_: ban, takedown, blocklist (use Suspend / delete), auto-moderation
+
 **Identity provider**:
 The external OIDC/SSO system a Deployment delegates Member authentication to. Configured in-app by an Admin; one per Deployment.
 _Avoid_: IdP (spell it out), auth server

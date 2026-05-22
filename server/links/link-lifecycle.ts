@@ -2,7 +2,7 @@ import type { ClickRequestMeta } from "./click-recorder"
 import type { DestinationValidationResult } from "./destination-validator"
 import type { RateLimiter } from "./rate-limiter"
 import type { SlugReservation } from "./slug-allocator"
-import { can } from "./authorization-policy"
+import { can, type LinkAction, type LinkActor } from "./authorization-policy"
 
 export type LinkLifecycleState = "active" | "suspended" | "tombstoned"
 
@@ -136,6 +136,46 @@ interface LinkLifecycleOptions {
 export function createLinkLifecycle(options: LinkLifecycleOptions) {
   const clock = options.clock ?? {
     now: () => new Date(),
+  }
+
+  // The single shared shape for every authorized single-Link transition
+  // (delete / suspend / unsuspend / update-expiration): resolve the Slug
+  // (case-folding has its one home here), reject when the Link is missing,
+  // Tombstoned (terminal — ADR-0003), or the actor is not authorized, then
+  // apply the repository mutation and map a null result to not_found.
+  async function transitionLink<Status extends string>(params: {
+    actor: LinkActor
+    action: LinkAction
+    slug: string
+    mutate: (slugKey: string) => Promise<LinkRecord | null>
+    status: Status
+  }): Promise<{ status: Status; link: LinkRecord } | { status: "not_found" }> {
+    const link = await options.repository.findBySlugKey(
+      params.slug.toLowerCase(),
+    )
+
+    if (
+      !link ||
+      link.lifecycleState === "tombstoned" ||
+      !can(params.actor, params.action, link)
+    ) {
+      return {
+        status: "not_found",
+      }
+    }
+
+    const mutated = await params.mutate(link.slugKey)
+
+    if (!mutated) {
+      return {
+        status: "not_found",
+      }
+    }
+
+    return {
+      status: params.status,
+      link: mutated,
+    }
   }
 
   return {
@@ -286,63 +326,25 @@ export function createLinkLifecycle(options: LinkLifecycleOptions) {
       member: { id: string },
       slug: string,
     ): Promise<{ status: "deleted"; link: LinkRecord } | { status: "not_found" }> {
-      const link = await options.repository.findBySlugKey(slug.toLowerCase())
-
-      if (
-        !link ||
-        link.lifecycleState === "tombstoned" ||
-        !can({ type: "member", memberId: member.id }, "delete", link)
-      ) {
-        return {
-          status: "not_found",
-        }
-      }
-
-      const deleted = await options.repository.tombstoneBySlugKey(link.slugKey)
-
-      if (!deleted) {
-        return {
-          status: "not_found",
-        }
-      }
-
-      return {
+      return transitionLink({
+        actor: { type: "member", memberId: member.id },
+        action: "delete",
+        slug,
+        mutate: (slugKey) => options.repository.tombstoneBySlugKey(slugKey),
         status: "deleted",
-        link: deleted,
-      }
+      })
     },
     async deleteAdminLink(
       member: { id: string; isAdmin?: boolean },
       slug: string,
     ): Promise<{ status: "deleted"; link: LinkRecord } | { status: "not_found" }> {
-      const link = await options.repository.findBySlugKey(slug.toLowerCase())
-
-      if (
-        !link ||
-        link.lifecycleState === "tombstoned" ||
-        !can(
-          { type: "member", memberId: member.id, isAdmin: member.isAdmin },
-          "delete",
-          link,
-        )
-      ) {
-        return {
-          status: "not_found",
-        }
-      }
-
-      const deleted = await options.repository.tombstoneBySlugKey(link.slugKey)
-
-      if (!deleted) {
-        return {
-          status: "not_found",
-        }
-      }
-
-      return {
+      return transitionLink({
+        actor: { type: "member", memberId: member.id, isAdmin: member.isAdmin },
+        action: "delete",
+        slug,
+        mutate: (slugKey) => options.repository.tombstoneBySlugKey(slugKey),
         status: "deleted",
-        link: deleted,
-      }
+      })
     },
     async suspendAdminLink(
       member: { id: string; isAdmin?: boolean },
@@ -350,34 +352,13 @@ export function createLinkLifecycle(options: LinkLifecycleOptions) {
     ): Promise<
       { status: "suspended"; link: LinkRecord } | { status: "not_found" }
     > {
-      const link = await options.repository.findBySlugKey(slug.toLowerCase())
-
-      if (
-        !link ||
-        link.lifecycleState === "tombstoned" ||
-        !can(
-          { type: "member", memberId: member.id, isAdmin: member.isAdmin },
-          "suspend",
-          link,
-        )
-      ) {
-        return {
-          status: "not_found",
-        }
-      }
-
-      const suspended = await options.repository.suspendBySlugKey(link.slugKey)
-
-      if (!suspended) {
-        return {
-          status: "not_found",
-        }
-      }
-
-      return {
+      return transitionLink({
+        actor: { type: "member", memberId: member.id, isAdmin: member.isAdmin },
+        action: "suspend",
+        slug,
+        mutate: (slugKey) => options.repository.suspendBySlugKey(slugKey),
         status: "suspended",
-        link: suspended,
-      }
+      })
     },
     async unsuspendAdminLink(
       member: { id: string; isAdmin?: boolean },
@@ -385,34 +366,13 @@ export function createLinkLifecycle(options: LinkLifecycleOptions) {
     ): Promise<
       { status: "unsuspended"; link: LinkRecord } | { status: "not_found" }
     > {
-      const link = await options.repository.findBySlugKey(slug.toLowerCase())
-
-      if (
-        !link ||
-        link.lifecycleState === "tombstoned" ||
-        !can(
-          { type: "member", memberId: member.id, isAdmin: member.isAdmin },
-          "suspend",
-          link,
-        )
-      ) {
-        return {
-          status: "not_found",
-        }
-      }
-
-      const unsuspended = await options.repository.unsuspendBySlugKey(link.slugKey)
-
-      if (!unsuspended) {
-        return {
-          status: "not_found",
-        }
-      }
-
-      return {
+      return transitionLink({
+        actor: { type: "member", memberId: member.id, isAdmin: member.isAdmin },
+        action: "suspend",
+        slug,
+        mutate: (slugKey) => options.repository.unsuspendBySlugKey(slugKey),
         status: "unsuspended",
-        link: unsuspended,
-      }
+      })
     },
     async suspendMemberLinks(member: { id: string }): Promise<LinkRecord[]> {
       return options.repository.suspendByOwnerMemberId(member.id)
@@ -425,33 +385,14 @@ export function createLinkLifecycle(options: LinkLifecycleOptions) {
       slug: string,
       expiresAt: Date | null,
     ): Promise<{ status: "updated"; link: LinkRecord } | { status: "not_found" }> {
-      const link = await options.repository.findBySlugKey(slug.toLowerCase())
-
-      if (
-        !link ||
-        link.lifecycleState === "tombstoned" ||
-        !can({ type: "member", memberId: member.id }, "update_expiration", link)
-      ) {
-        return {
-          status: "not_found",
-        }
-      }
-
-      const updated = await options.repository.updateExpirationBySlugKey(
-        link.slugKey,
-        expiresAt,
-      )
-
-      if (!updated) {
-        return {
-          status: "not_found",
-        }
-      }
-
-      return {
+      return transitionLink({
+        actor: { type: "member", memberId: member.id },
+        action: "update_expiration",
+        slug,
+        mutate: (slugKey) =>
+          options.repository.updateExpirationBySlugKey(slugKey, expiresAt),
         status: "updated",
-        link: updated,
-      }
+      })
     },
     async resolve(
       slug: string,

@@ -2,10 +2,10 @@ import { describe, expect, it, vi } from "vitest"
 
 import { createLinkLifecycle } from "../../server/links/link-lifecycle"
 import { createSlugAllocator } from "../../server/links/slug-allocator"
+import { createAuthenticatedMemberAccess } from "../../server/members/authenticated-member"
 import { createAuthenticatedMemberRequestGuard } from "../../server/members/authenticated-request-guard"
 import { createMemberIdentity } from "../../server/members/member-identity"
-import { createMemberSuspension } from "../../server/members/member-suspension"
-import { createMemberStatus } from "../../server/members/member-status"
+import { createMemberModeration } from "../../server/moderation/member-moderation"
 import { createMemoryLinkRepository } from "../support/memory-link-repository"
 import { createMemoryMemberRepository } from "../support/memory-member-repository"
 
@@ -52,7 +52,9 @@ function createFixture() {
     }),
   })
   const invalidateSessions = vi.fn(async () => undefined)
-  const suspension = createMemberSuspension({
+  // The cascade runs through the one Moderation seam over the *real* Member
+  // and Link seams — only the session invalidator is a spy.
+  const moderation = createMemberModeration({
     members: memberRepository,
     links,
     sessions: {
@@ -62,25 +64,31 @@ function createFixture() {
       now: () => new Date("2026-05-17T12:00:00.000Z"),
     },
   })
-  const status = createMemberStatus({
-    repository: memberRepository,
+  const access = createAuthenticatedMemberAccess({
+    async sessionFor() {
+      return { user: { id: "member-1" } }
+    },
+    async memberForSession() {
+      return { id: "member-1" }
+    },
+    statusOf: (member) => memberRepository.statusOf(member),
   })
 
   return {
+    access,
     invalidateSessions,
     links,
     memberRepository,
-    status,
-    suspension,
+    moderation,
   }
 }
 
-describe("Member suspension", () => {
-  it("suspends a Member, cascades to their Links, and emits active-session invalidation", async () => {
+describe("Member moderation", () => {
+  it("suspends a Member as one act: status flip, Link cascade, session invalidation", async () => {
     const fixture = createFixture()
 
     await expect(
-      fixture.suspension.suspendMember(
+      fixture.moderation.suspendMember(
         { id: "admin-1", isAdmin: true },
         "member-1",
       ),
@@ -97,9 +105,9 @@ describe("Member suspension", () => {
       ],
     })
 
-    await expect(fixture.status.statusOf({ id: "member-1" })).resolves.toBe(
-      "suspended",
-    )
+    await expect(
+      fixture.memberRepository.statusOf({ id: "member-1" }),
+    ).resolves.toBe("suspended")
     await expect(fixture.links.resolve("first-link")).resolves.toEqual({
       status: "suspended",
     })
@@ -119,16 +127,28 @@ describe("Member suspension", () => {
     )
   })
 
+  it("requires Admin rights — a non-Admin actor cannot suspend", async () => {
+    const fixture = createFixture()
+
+    await expect(
+      fixture.moderation.suspendMember({ id: "member-2" }, "member-1"),
+    ).resolves.toEqual({ status: "not_found" })
+    await expect(
+      fixture.memberRepository.statusOf({ id: "member-1" }),
+    ).resolves.toBe("active")
+    expect(fixture.invalidateSessions).not.toHaveBeenCalled()
+  })
+
   it("unsuspends a Member and restores their Links without retiring Slugs", async () => {
     const fixture = createFixture()
 
-    await fixture.suspension.suspendMember(
+    await fixture.moderation.suspendMember(
       { id: "admin-1", isAdmin: true },
       "member-1",
     )
 
     await expect(
-      fixture.suspension.unsuspendMember(
+      fixture.moderation.unsuspendMember(
         { id: "admin-1", isAdmin: true },
         "member-1",
       ),
@@ -145,7 +165,9 @@ describe("Member suspension", () => {
       ],
     })
 
-    await expect(fixture.status.statusOf({ id: "member-1" })).resolves.toBe("active")
+    await expect(
+      fixture.memberRepository.statusOf({ id: "member-1" }),
+    ).resolves.toBe("active")
     await expect(fixture.links.resolve("first-link")).resolves.toEqual({
       status: "redirect",
       destination: "https://docs.example.com/first",
@@ -164,7 +186,7 @@ describe("Member suspension", () => {
   it("blocks SSO sign-in while the Member is suspended and allows it after restore", async () => {
     const fixture = createFixture()
 
-    await fixture.suspension.suspendMember(
+    await fixture.moderation.suspendMember(
       { id: "admin-1", isAdmin: true },
       "member-1",
     )
@@ -181,7 +203,7 @@ describe("Member suspension", () => {
       }),
     ).rejects.toThrow("Member is suspended")
 
-    await fixture.suspension.unsuspendMember(
+    await fixture.moderation.unsuspendMember(
       { id: "admin-1", isAdmin: true },
       "member-1",
     )
@@ -205,23 +227,11 @@ describe("Member suspension", () => {
     const forceSignOut = vi.fn(async () => undefined)
     const handle = vi.fn(async () => ({ status: "handled" }))
     const guard = createAuthenticatedMemberRequestGuard({
-      async sessionFor() {
-        return {
-          user: {
-            id: "better-auth-user-1",
-          },
-        }
-      },
-      async memberForSession() {
-        return {
-          id: "member-1",
-        }
-      },
-      statusOf: (member) => fixture.status.statusOf(member),
+      access: fixture.access,
       forceSignOut,
     })
 
-    await fixture.suspension.suspendMember(
+    await fixture.moderation.suspendMember(
       { id: "admin-1", isAdmin: true },
       "member-1",
     )

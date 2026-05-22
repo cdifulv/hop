@@ -1,24 +1,29 @@
 import { describe, expect, it, vi } from "vitest"
 
+import {
+  createAuthenticatedMemberAccess,
+  type MemberStatus,
+} from "../../server/members/authenticated-member"
 import { createAuthenticatedMemberRequestGuard } from "../../server/members/authenticated-request-guard"
-import type { MemberStatus } from "../../server/members/member-status"
 
 function createRequest(statusOf: (member: { id: string }) => Promise<MemberStatus>) {
   const forceSignOut = vi.fn(async () => undefined)
   const guard = createAuthenticatedMemberRequestGuard({
-    async sessionFor() {
-      return {
-        user: {
-          id: "member-1",
-        },
-      }
-    },
-    async memberForSession(_request, session) {
-      return {
-        id: session.user?.id ?? "",
-      }
-    },
-    statusOf,
+    access: createAuthenticatedMemberAccess({
+      async sessionFor() {
+        return {
+          user: {
+            id: "member-1",
+          },
+        }
+      },
+      async memberForSession(_request, session) {
+        return {
+          id: session.user?.id ?? "",
+        }
+      },
+      statusOf,
+    }),
     forceSignOut,
   })
 
@@ -43,25 +48,55 @@ describe("authenticated Member request guard", () => {
     expect(request.forceSignOut).not.toHaveBeenCalled()
   })
 
+  it("rejects an unauthenticated request without forcing sign-out", async () => {
+    const forceSignOut = vi.fn(async () => undefined)
+    const handle = vi.fn(async () => ({ status: "handled" }))
+    const guard = createAuthenticatedMemberRequestGuard({
+      access: createAuthenticatedMemberAccess({
+        async sessionFor() {
+          return null
+        },
+        async memberForSession() {
+          return null
+        },
+        async statusOf() {
+          return "active"
+        },
+      }),
+      forceSignOut,
+    })
+
+    await expect(
+      guard({ headers: new Headers() }, handle),
+    ).rejects.toMatchObject({
+      statusCode: 401,
+      statusMessage: "authentication_required",
+    })
+    expect(forceSignOut).not.toHaveBeenCalled()
+    expect(handle).not.toHaveBeenCalled()
+  })
+
   it("rejects a Suspended Member and forces sign-out before the handler runs", async () => {
     const handle = vi.fn(async () => ({ status: "handled" }))
     const forceSignOut = vi.fn(async () => undefined)
     const guard = createAuthenticatedMemberRequestGuard({
-      async sessionFor() {
-        return {
-          user: {
-            id: "member-1",
-          },
-        }
-      },
-      async memberForSession(_request, session) {
-        return {
-          id: session.user?.id ?? "",
-        }
-      },
-      async statusOf() {
-        return "suspended"
-      },
+      access: createAuthenticatedMemberAccess({
+        async sessionFor() {
+          return {
+            user: {
+              id: "member-1",
+            },
+          }
+        },
+        async memberForSession(_request, session) {
+          return {
+            id: session.user?.id ?? "",
+          }
+        },
+        async statusOf() {
+          return "suspended"
+        },
+      }),
       forceSignOut,
     })
 

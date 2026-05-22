@@ -1,12 +1,23 @@
 import type { LinkRecord } from "../links/link-lifecycle"
-import type { MemberRecord } from "./member-identity"
+import type { MemberRecord } from "../members/member-identity"
 
+/**
+ * Moderation owns the Member Suspension cascade as one act (CONTEXT:
+ * Moderation, ADR-0007): the Member status flips, every Link they own is
+ * Suspended via the Link seam, and their existing sessions are invalidated
+ * immediately. The Member module stays free of any Link dependency — the
+ * cascade lives here, not inside it.
+ */
 export interface MemberSuspensionRepository {
   suspendMember(id: string, suspendedAt: Date): Promise<MemberRecord | null>
   unsuspendMember(id: string): Promise<MemberRecord | null>
 }
 
-interface MemberLinkSuspension {
+/**
+ * The Link seam Moderation depends on for the by-owner cascade. Implemented by
+ * the Link lifecycle; Moderation never reaches into the Link repository.
+ */
+export interface MemberLinkSuspension {
   suspendMemberLinks(member: { id: string }): Promise<LinkRecord[]>
   unsuspendMemberLinks(member: { id: string }): Promise<LinkRecord[]>
 }
@@ -15,7 +26,7 @@ export interface MemberSessionInvalidator {
   invalidateSessions(member: { id: string }): Promise<void>
 }
 
-interface MemberSuspensionOptions {
+interface MemberModerationOptions {
   members: MemberSuspensionRepository
   links: MemberLinkSuspension
   sessions: MemberSessionInvalidator
@@ -44,7 +55,7 @@ type MemberUnsuspensionResult =
       status: "not_found"
     }
 
-export function createMemberSuspension(options: MemberSuspensionOptions) {
+export function createMemberModeration(options: MemberModerationOptions) {
   const clock = options.clock ?? {
     now: () => new Date(),
   }

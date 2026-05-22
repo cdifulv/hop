@@ -3,8 +3,8 @@ import type {
   MemberRepository,
   SsoMemberInput,
 } from "../../server/members/member-identity"
-import type { MemberStatusRepository } from "../../server/members/member-status"
-import type { MemberSuspensionRepository } from "../../server/members/member-suspension"
+import type { MemberStatusRepository } from "../../server/members/authenticated-member"
+import type { MemberSuspensionRepository } from "../../server/moderation/member-moderation"
 
 export function createMemoryMemberRepository(
   seeds: SsoMemberInput[] = [],
@@ -63,10 +63,12 @@ export function createMemoryMemberRepository(
       return updated
     },
     async statusOf(member) {
+      // Repository-contract guarantee (ADR-0008 / plan #3): never null. A
+      // missing Member is "active", matching the Drizzle adapter.
       const record = membersById.get(member.id)
 
       if (!record) {
-        return null
+        return "active"
       }
 
       return record.suspended ? "suspended" : "active"
