@@ -1,24 +1,26 @@
 <script setup lang="ts">
-import type { DropdownMenuItem } from '@nuxt/ui';
+import type { DropdownMenuItem } from "@nuxt/ui"
 
-import { authClient } from '~/utils/auth-client';
+import { canAccessAdminShell } from "~/utils/admin-shell"
+import { authClient } from "~/utils/auth-client"
 
-const colorMode = useColorMode();
-const session = authClient.useSession();
+const colorMode = useColorMode()
+const { session, liveMemberSession } = useLiveMemberSession()
 
 const colorModeTitle = computed(() =>
-  colorMode.value === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'
-);
+  colorMode.value === "dark" ? "Switch to light mode" : "Switch to dark mode",
+)
 
-const member = computed(() => session.value?.data?.user ?? null);
-const sessionPending = computed(() => session.value?.isPending ?? false);
+const member = computed(() => session.value?.data?.user ?? null)
+const sessionPending = computed(() => session.value?.isPending ?? true)
+const showAdminNav = computed(() => canAccessAdminShell(liveMemberSession.value))
 
 const memberName = computed(
-  () => member.value?.name?.trim() || member.value?.email?.trim() || 'Member'
-);
+  () => member.value?.name?.trim() || member.value?.email?.trim() || "Member",
+)
 
 const memberInitials = computed(() => {
-  const name = member.value?.name?.trim();
+  const name = member.value?.name?.trim()
 
   if (name) {
     return name
@@ -26,41 +28,41 @@ const memberInitials = computed(() => {
       .filter(Boolean)
       .slice(0, 2)
       .map((part) => part[0])
-      .join('')
-      .toUpperCase();
+      .join("")
+      .toUpperCase()
   }
 
-  const email = member.value?.email?.trim();
-  return email ? email.slice(0, 2).toUpperCase() : '?';
-});
+  const email = member.value?.email?.trim()
+  return email ? email.slice(0, 2).toUpperCase() : "?"
+})
 
-const isSigningOut = ref(false);
+const isSigningOut = ref(false)
 
 const menuItems = computed<DropdownMenuItem[][]>(() => [
-  [{ label: memberName.value, type: 'label' }],
+  [{ label: memberName.value, type: "label" }],
   [
     {
-      label: isSigningOut.value ? 'Signing out…' : 'Sign out',
-      icon: 'i-lucide-log-out',
+      label: isSigningOut.value ? "Signing out…" : "Sign out",
+      icon: "i-lucide-log-out",
       onSelect: () => {
-        void signOut();
-      }
-    }
-  ]
-]);
+        void signOut()
+      },
+    },
+  ],
+])
 
 async function signOut() {
   if (isSigningOut.value) {
-    return;
+    return
   }
 
-  isSigningOut.value = true;
+  isSigningOut.value = true
 
   try {
-    await authClient.signOut();
+    await authClient.signOut()
   } finally {
     // Full reload so the dashboard re-fetches Links as an Anonymous visitor.
-    await navigateTo('/', { external: true });
+    await navigateTo("/", { external: true })
   }
 }
 </script>
@@ -81,6 +83,16 @@ async function signOut() {
         </span>
       </NuxtLink>
       <div class="flex items-center gap-2">
+        <UButton
+          v-if="showAdminNav"
+          to="/admin"
+          variant="ghost"
+          icon="i-lucide-shield-check"
+          class="h-8 rounded-full px-3 text-sm font-semibold text-[#0B4DA2] hover:bg-[#EFF6FF] hover:text-[#093f84] dark:text-[#60A5FA] dark:hover:bg-[#1E3A5F]"
+        >
+          Admin
+        </UButton>
+
         <UColorModeButton
           variant="ghost"
           size="sm"
