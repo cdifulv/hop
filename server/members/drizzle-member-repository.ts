@@ -3,6 +3,7 @@ import { and, eq, inArray } from "drizzle-orm"
 import { db } from "../db"
 import { account, session, ssoProvider } from "../db/schema/better-auth.generated"
 import { members } from "../db/schema/hop"
+import { bootstrapIdentityProviderIssuer } from "./bootstrap-admin"
 import type { MemberStatusRepository } from "./authenticated-member"
 import type { MemberRecord, MemberRepository } from "./member-identity"
 import type {
@@ -140,26 +141,54 @@ export function createDrizzleMemberSessionInvalidator(): MemberSessionInvalidato
 export function createDrizzleAuthenticatedMemberResolver() {
   return {
     async memberForBetterAuthUser(userId: string) {
-      const [member] = await db
-        .select({
-          id: members.id,
-          isAdmin: members.isAdmin,
-        })
-        .from(account)
-        .innerJoin(ssoProvider, eq(account.providerId, ssoProvider.providerId))
-        .innerJoin(
-          members,
-          and(
-            eq(members.identityProviderIssuer, ssoProvider.issuer),
-            eq(members.identityProviderSubject, account.accountId),
-          ),
-        )
-        .where(eq(account.userId, userId))
-        .limit(1)
-
-      return member ?? null
+      // An SSO Member is keyed through their Identity provider account. The
+      // deploy-time Bootstrap admin (ADR-0001) has no Identity provider, so
+      // its Member row is keyed on the sentinel issuer + the Better Auth id.
+      return (
+        (await ssoMemberForBetterAuthUser(userId)) ??
+        (await bootstrapMemberForBetterAuthUser(userId))
+      )
     },
   }
+}
+
+async function ssoMemberForBetterAuthUser(userId: string) {
+  const [member] = await db
+    .select({
+      id: members.id,
+      isAdmin: members.isAdmin,
+    })
+    .from(account)
+    .innerJoin(ssoProvider, eq(account.providerId, ssoProvider.providerId))
+    .innerJoin(
+      members,
+      and(
+        eq(members.identityProviderIssuer, ssoProvider.issuer),
+        eq(members.identityProviderSubject, account.accountId),
+      ),
+    )
+    .where(eq(account.userId, userId))
+    .limit(1)
+
+  return member ?? null
+}
+
+async function bootstrapMemberForBetterAuthUser(userId: string) {
+  const [member] = await db
+    .select({
+      id: members.id,
+      isAdmin: members.isAdmin,
+    })
+    .from(members)
+    .where(
+      and(
+        eq(members.identityProviderIssuer, bootstrapIdentityProviderIssuer),
+        eq(members.identityProviderSubject, userId),
+      ),
+    )
+    .limit(1)
+
+  return member ?? null
 }
 
 export function toMemberRecord(member: typeof members.$inferSelect): MemberRecord {

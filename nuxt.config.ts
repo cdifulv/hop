@@ -7,6 +7,7 @@ export default defineNuxtConfig({
     shortDomain: process.env.NUXT_SHORT_DOMAIN,
     public: {
       shortDomain: process.env.NUXT_PUBLIC_SHORT_DOMAIN || process.env.NUXT_SHORT_DOMAIN || "localhost:3000",
+      ssoProviderId: process.env.NUXT_PUBLIC_SSO_PROVIDER_ID || "",
     },
   },
   app: {

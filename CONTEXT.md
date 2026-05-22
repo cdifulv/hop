@@ -9,10 +9,10 @@ A single self-hosted instance of hop, serving one organization and one short dom
 _Avoid_: tenant, server, environment
 
 **Short domain**:
-The bare domain a Deployment issues short links under and resolves redirects on (e.g. `somcap.com/leap-204`). Serves redirects only — no app UI. One per Deployment.
+The bare domain a Deployment issues short links under and resolves redirects on (e.g. `acme.com/leap-204`). Serves redirects only — no app UI. One per Deployment.
 
 **App domain**:
-The separate host serving the hop application: dashboard, sign-in, admin, and API (e.g. `app.somcap.com`). Distinct from the Short domain so Slugs never collide with app routes. One per Deployment.
+The separate host serving the hop application: dashboard, sign-in, admin, and API (e.g. `app.acme.com`). Distinct from the Short domain so Slugs never collide with app routes. One per Deployment.
 _Avoid_: dashboard URL, web host
 
 **Link**:
@@ -20,7 +20,7 @@ A mapping from a Slug to a Destination, optionally with an Expiration. The produ
 _Avoid_: URL (ambiguous — could mean Destination), redirect
 
 **Slug**:
-The path segment after the Short domain that identifies a Link (e.g. `leap-204` in `somcap.com/leap-204`). Unique across the entire Deployment and permanent: once used, a Slug is never reissued, even after its Link is deleted.
+The path segment after the Short domain that identifies a Link (e.g. `leap-204` in `acme.com/leap-204`). Unique across the entire Deployment and permanent: once used, a Slug is never reissued, even after its Link is deleted.
 When not supplied, hop auto-generates a short random base62 code. Custom Slugs allow letters, digits, and hyphens, are matched case-insensitively, and run ~3–64 chars.
 _Avoid_: short code, alias, path, key
 
@@ -40,18 +40,18 @@ _Avoid_: TTL, expiry date (use Expiration), timeout
 The state of a Link past its Expiration: it no longer redirects, and a visitor sees a distinct "expired" page (not a 404). The Link record and its stats are retained indefinitely; nothing is auto-deleted.
 
 **Suspended**:
-A reversible Admin-imposed state in which a Link stops resolving. Applied directly to one Link, or to a Member (cascading to every Link they own). Unlike a Tombstone it does not retire the Slug — the mapping is intact, just halted — and an Admin can lift it, after which the Link resolves again. Distinct from deletion, which remains separate and permanent.
+A reversible Admin-imposed halt in which a Link stops resolving. Suspension comes from two independent sources: an Admin Suspends a Link **directly**, or Suspends its owning **Member**, which cascades to every Link they own. The two are **layers**, not alternatives — both can apply to one Link at once, and lifting one never lifts the other. A Link resolves again only once **every** Suspension layer on it has been lifted. Unlike a Tombstone, Suspension does not retire the Slug — the mapping is intact, just halted. Distinct from deletion, which is separate and permanent.
 _Avoid_: banned, blocked, disabled (use Suspended), deactivated
 
 **Suspended Member**:
-A Member an Admin has suspended: it takes effect immediately — existing sessions are invalidated (forced sign-out on next request) and they cannot sign in again (regardless of the Identity provider), and every Link they own is Suspended for the duration. Reversible by an Admin.
+A Member an Admin has suspended: it takes effect immediately — existing sessions are invalidated (forced sign-out on next request) and they cannot sign in again (regardless of the Identity provider), and every Link they own is Suspended for the duration. Reversible by an Admin. Only a non-Admin Member can be Suspended — an Admin must be Demoted first, so a Suspended Member is never also an Admin — and an Admin can never Suspend their own account.
 
 **Member**:
-A signed-in person, identified by their stable Identity provider subject (not their email — email is display metadata and may change without affecting identity or Link ownership). Anyone the Deployment's Identity provider successfully authenticates becomes a Member on first sign-in — there is no separate eligibility step; eligibility is whatever the operator scopes the Identity provider to. hop holds no passwords. A Member can see and manage the Links they created. Membership is personal — one account, no teams or shared management.
+A signed-in person, identified by their stable Identity provider subject (not their email — email is display metadata and may change without affecting identity or Link ownership). Anyone the Deployment's Identity provider successfully authenticates becomes a Member on first sign-in — there is no separate eligibility step; eligibility is whatever the operator scopes the Identity provider to. hop holds no member passwords. A Member can see and manage the Links they created. Membership is personal — one account, no teams or shared management.
 _Avoid_: user, workspace, owner, account
 
 **Admin**:
-A Member with elevated rights: configures the Deployment (Identity provider, Short domain), can view and delete any Link including the Anonymous pool, and can disable anonymous Link creation entirely (a kill switch; redirects keep working). Anonymous creation is rate-limited per source regardless. An Admin does not gate Membership — that is delegated to the Identity provider's own scoping.
+A Member with elevated rights: configures the Deployment (Identity provider, Short domain), can view and delete any Link including the Anonymous pool, can view the Deployment's Members, and can disable anonymous Link creation entirely (a kill switch; redirects keep working). Anonymous creation is rate-limited per source regardless. An Admin does not gate Membership — that is delegated to the Identity provider's own scoping.
 _Avoid_: operator (the operator deploys infra; an Admin administers from within the app), superuser, root
 
 **Moderation**:
@@ -59,11 +59,11 @@ An Admin's explicit intervention on a Link or Member to stop abuse: **Suspending
 _Avoid_: ban, takedown, blocklist (use Suspend / delete), auto-moderation
 
 **Identity provider**:
-The external OIDC/SSO system a Deployment delegates Member authentication to. Configured in-app by an Admin; one per Deployment.
+The external OIDC/SSO system a Deployment delegates Member authentication to. Configured in-app by an Admin — issuer, client ID, and client secret — one per Deployment. The issuer anchors Member identity (a Member is keyed on issuer + Identity provider subject), so it is fixed once the first SSO Member has signed in; client ID and client secret stay editable, but changing the issuer thereafter would detach every existing Member from their Links. The client secret is a deployment-to-Identity-provider **service credential**, not a human login password; hop stores it encrypted at rest in the database, decryptable only with a master key supplied to the Deployment as an environment variable.
 _Avoid_: IdP (spell it out), auth server
 
 **Bootstrap admin**:
-A one-time, deploy-time local credential that lets the very first Admin sign in to configure the Identity provider and promote the first SSO Admin. Automatically and permanently disabled once the Identity provider is active *and* at least one non-bootstrap Admin exists; the only place hop ever holds a password.
+A one-time, deploy-time local credential that lets the very first Admin sign in to configure the Identity provider and promote the first SSO Admin. Automatically and permanently disabled once the Identity provider is active *and* at least one non-bootstrap Admin exists; the only human login password hop ever holds — distinct from the Identity provider client secret, a service credential hop stores encrypted.
 _Avoid_: root account, default admin
 
 **Click event**:
@@ -89,7 +89,7 @@ The one-time act, at sign-in, of attaching the Links tracked in the current Brow
 - Every **Slug** is unique across the whole **Deployment** (across all **Members** and the **Anonymous pool**) and is never reissued; deleting a Link leaves a **Tombstone**
 - Any person the **Identity provider** authenticates becomes a **Member** on first sign-in; there is no separate eligibility gate
 - An **Admin** is a **Member** with Deployment-wide configuration and Link-moderation rights; Admin is granted in-app — the **Bootstrap admin** promotes the first Admin(s), and Admins promote/demote other **Members** thereafter
-- An **Admin** can **Suspend** a single **Link** (including one in the **Anonymous pool**) or a whole **Member** (cascading to all their Links); Suspension is reversible and does not retire the **Slug**, unlike deletion (**Tombstone**)
+- An **Admin** can **Suspend** a single **Link** (including one in the **Anonymous pool**) or a whole **Member** (cascading to all their Links); Suspension is reversible and does not retire the **Slug**, unlike deletion (**Tombstone**). Direct-Link and Member-cascade Suspension are independent layers — a Link stays Suspended until every layer on it is lifted
 - Removal from the **Identity provider** is passive: the person can no longer sign in, but their **Links** keep resolving and are not Suspended — only an Admin Suspends
 - A **Link** is owned by at most one **Member**; unowned Links are in the **Anonymous pool**
 - A **Link** accumulates many **Click events**; its click count is their aggregate
@@ -106,6 +106,9 @@ The one-time act, at sign-in, of attaching the Links tracked in the current Brow
 >
 > **Dev:** "An Admin opens the Anonymous pool and sees a sketchy Link. Expired ones too?"
 > **Domain expert:** "Yes — Expired Links keep their record and Click events, they just stop resolving and show an expired page. The Admin can delete it; that turns it into a Tombstone."
+>
+> **Dev:** "An Admin Suspends one bad Link of Dana's, then later Suspends Dana entirely. They clear Dana and un-suspend her. Does that one Link come back?"
+> **Domain expert:** "No. Suspending Dana added a Member-cascade layer on top of that Link's own direct Suspension. Un-suspending Dana lifts only the cascade layer — the direct Suspension the Admin put on that one Link is still there. It stays halted until the Admin lifts that one too."
 
 ## Flagged ambiguities
 

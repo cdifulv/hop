@@ -1,5 +1,5 @@
 {
-  "name": "somerset-hop",
+  "name": "acme-hop",
   "version": "0.1.0",
   "private": true,
   "scripts": {
@@ -11,6 +11,7 @@
     "db:generate": "npm run db:generate:auth && node scripts/with-env.mjs drizzle-kit generate",
     "db:migrate": "node scripts/with-env.mjs drizzle-kit migrate",
     "db:setup": "npm run db:generate && npm run db:migrate",
+    "seed:bootstrap-admin": "node scripts/with-env.mjs tsx scripts/seed-bootstrap-admin.ts",
     "test:unit": "vitest run",
     "test:db:smoke": "node scripts/with-env.mjs vitest run tests/db/migration-smoke.test.ts"
   },
@@ -33,6 +34,7 @@
     "drizzle-kit": "^0.31.10",
     "eslint": "^9.17.0",
     "tailwindcss": "^4.2.4",
+    "tsx": "^4.22.0",
     "typescript": "^5.7.2",
     "vitest": "^4.1.6"
   }
