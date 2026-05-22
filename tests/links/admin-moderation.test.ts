@@ -4,7 +4,7 @@ import { createLinkLifecycle } from "../../server/links/link-lifecycle"
 import { createSlugAllocator } from "../../server/links/slug-allocator"
 import { createMemoryLinkRepository } from "../support/memory-link-repository"
 
-function createAdminModerationLinks() {
+function createAdminModerationLinks(now = new Date("2026-05-16T12:00:00.000Z")) {
   const repository = createMemoryLinkRepository([
     {
       slug: "member-link",
@@ -31,6 +31,9 @@ function createAdminModerationLinks() {
       repository,
       randomBase62: () => "unused",
     }),
+    clock: {
+      now: () => now,
+    },
   })
 }
 
@@ -97,7 +100,6 @@ describe("Admin Link moderation", () => {
         destination: "https://docs.example.com/expired-suspended",
         ownerMemberId: "member-1",
         expiresAt: new Date("2026-05-16T11:00:00.000Z"),
-        lifecycleState: "suspended",
       },
     ])
     const links = createLinkLifecycle({
@@ -112,9 +114,55 @@ describe("Admin Link moderation", () => {
       },
     })
 
+    await links.suspendAdminLink(
+      { id: "admin-1", isAdmin: true },
+      "expired-suspended",
+    )
+
     await expect(links.resolve("expired-suspended")).resolves.toEqual({
       status: "suspended",
     })
+  })
+
+  it("exposes direct and owner suspension provenance to Admins", async () => {
+    const links = createAdminModerationLinks(
+      new Date("2026-05-18T12:00:00.000Z"),
+    )
+
+    await links.suspendAdminLink(
+      { id: "admin-direct", isAdmin: true },
+      "member-link",
+    )
+    await links.suspendMemberLinks(
+      { id: "member-1" },
+      { id: "admin-owner" },
+    )
+
+    await expect(
+      links.listAdminLinks({ id: "admin-1", isAdmin: true }),
+    ).resolves.toEqual([
+      expect.objectContaining({
+        slug: "anonymous-link",
+        suspension: {
+          direct: null,
+          owner: null,
+        },
+      }),
+      expect.objectContaining({
+        slug: "member-link",
+        lifecycleState: "suspended",
+        suspension: {
+          direct: {
+            adminMemberId: "admin-direct",
+            suspendedAt: new Date("2026-05-18T12:00:00.000Z"),
+          },
+          owner: {
+            adminMemberId: "admin-owner",
+            suspendedAt: new Date("2026-05-18T12:00:00.000Z"),
+          },
+        },
+      }),
+    ])
   })
 
   it("lists every Link across the Deployment, including the Anonymous pool", async () => {

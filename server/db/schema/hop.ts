@@ -55,6 +55,16 @@ export const links = pgTable(
     expiresAt: timestamp("expires_at", { withTimezone: true }),
     lifecycleState: linkLifecycleState("lifecycle_state").notNull().default("active"),
     suspendedAt: timestamp("suspended_at", { withTimezone: true }),
+    directSuspendedByMemberId: uuid("direct_suspended_by_member_id").references(
+      () => members.id,
+      { onDelete: "set null" },
+    ),
+    directSuspendedAt: timestamp("direct_suspended_at", { withTimezone: true }),
+    ownerSuspendedByMemberId: uuid("owner_suspended_by_member_id").references(
+      () => members.id,
+      { onDelete: "set null" },
+    ),
+    ownerSuspendedAt: timestamp("owner_suspended_at", { withTimezone: true }),
     tombstonedAt: timestamp("tombstoned_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
@@ -65,6 +75,8 @@ export const links = pgTable(
     index("links_created_at_idx").on(table.createdAt),
     index("links_expires_at_idx").on(table.expiresAt),
     index("links_lifecycle_state_idx").on(table.lifecycleState),
+    index("links_direct_suspended_at_idx").on(table.directSuspendedAt),
+    index("links_owner_suspended_at_idx").on(table.ownerSuspendedAt),
   ],
 )
 

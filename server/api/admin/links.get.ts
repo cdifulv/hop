@@ -43,6 +43,20 @@ export default defineEventHandler(async (event) => {
           ...toLinkResponse(link, shortHost),
           ownerMemberId: link.ownerMemberId,
           lifecycleState: link.lifecycleState,
+          suspension: {
+            direct: link.suspension.direct
+              ? {
+                  adminMemberId: link.suspension.direct.adminMemberId,
+                  suspendedAt: link.suspension.direct.suspendedAt.toISOString(),
+                }
+              : null,
+            owner: link.suspension.owner
+              ? {
+                  adminMemberId: link.suspension.owner.adminMemberId,
+                  suspendedAt: link.suspension.owner.suspendedAt.toISOString(),
+                }
+              : null,
+          },
         })),
       }
     },

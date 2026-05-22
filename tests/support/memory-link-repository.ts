@@ -1,6 +1,7 @@
 import type {
   BrowserSessionRepository,
   CreateLinkInput,
+  LinkSuspensionSource,
   ListMemberLinksOptions,
   LinkRecord,
   LinkRepository,
@@ -8,6 +9,7 @@ import type {
 
 type MemoryLinkSeed = CreateLinkInput & {
   lifecycleState?: LinkRecord["lifecycleState"]
+  suspension?: Partial<LinkRecord["suspension"]>
   clickCount?: number
   createdAt?: Date
 }
@@ -32,6 +34,10 @@ export function createMemoryLinkRepository(
   const now = new Date("2026-05-16T00:00:00.000Z")
 
   function addLink(input: MemoryLinkSeed, index: number) {
+    const suspension = {
+      direct: input.suspension?.direct ?? null,
+      owner: input.suspension?.owner ?? null,
+    }
     const link: LinkRecord = {
       id: `link-${index + 1}`,
       slug: input.slug,
@@ -39,7 +45,10 @@ export function createMemoryLinkRepository(
       destination: input.destination,
       expiresAt: input.expiresAt ?? null,
       ownerMemberId: input.ownerMemberId,
-      lifecycleState: input.lifecycleState ?? "active",
+      lifecycleState:
+        input.lifecycleState ??
+        (suspension.direct || suspension.owner ? "suspended" : "active"),
+      suspension,
       createdAt: input.createdAt ?? now,
       updatedAt: now,
     }
@@ -113,7 +122,7 @@ export function createMemoryLinkRepository(
       links.set(slugKey, tombstoned)
       return tombstoned
     },
-    async suspendBySlugKey(slugKey: string) {
+    async suspendBySlugKey(slugKey: string, source: LinkSuspensionSource) {
       const link = links.get(slugKey)
 
       if (!link || link.lifecycleState === "tombstoned") {
@@ -123,13 +132,17 @@ export function createMemoryLinkRepository(
       const suspended: LinkRecord = {
         ...link,
         lifecycleState: "suspended",
+        suspension: {
+          ...link.suspension,
+          direct: source,
+        },
         updatedAt: now,
       }
 
       links.set(slugKey, suspended)
       return suspended
     },
-    async suspendByOwnerMemberId(memberId: string) {
+    async suspendByOwnerMemberId(memberId: string, source: LinkSuspensionSource) {
       const suspended: LinkRecord[] = []
 
       for (const link of links.values()) {
@@ -143,6 +156,10 @@ export function createMemoryLinkRepository(
         const updated: LinkRecord = {
           ...link,
           lifecycleState: "suspended",
+          suspension: {
+            ...link.suspension,
+            owner: source,
+          },
           updatedAt: now,
         }
 
@@ -161,7 +178,11 @@ export function createMemoryLinkRepository(
 
       const active: LinkRecord = {
         ...link,
-        lifecycleState: "active",
+        lifecycleState: link.suspension.owner ? "suspended" : "active",
+        suspension: {
+          ...link.suspension,
+          direct: null,
+        },
         updatedAt: now,
       }
 
@@ -181,7 +202,11 @@ export function createMemoryLinkRepository(
 
         const updated: LinkRecord = {
           ...link,
-          lifecycleState: "active",
+          lifecycleState: link.suspension.direct ? "suspended" : "active",
+          suspension: {
+            ...link.suspension,
+            owner: null,
+          },
           updatedAt: now,
         }
 

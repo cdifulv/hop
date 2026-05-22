@@ -183,6 +183,50 @@ describe("Member moderation", () => {
     })
   })
 
+  it("leaves a directly-Suspended Link halted after its Member is unsuspended", async () => {
+    const fixture = createFixture()
+
+    await fixture.links.suspendAdminLink(
+      { id: "admin-link", isAdmin: true },
+      "first-link",
+    )
+    await fixture.moderation.suspendMember(
+      { id: "admin-member", isAdmin: true },
+      "member-1",
+    )
+
+    await expect(
+      fixture.moderation.unsuspendMember(
+        { id: "admin-member", isAdmin: true },
+        "member-1",
+      ),
+    ).resolves.toEqual({
+      status: "unsuspended",
+      member: expect.objectContaining({
+        id: "member-1",
+        suspended: false,
+      }),
+      links: [
+        expect.objectContaining({
+          slug: "first-link",
+          lifecycleState: "suspended",
+        }),
+        expect.objectContaining({
+          slug: "second-link",
+          lifecycleState: "active",
+        }),
+      ],
+    })
+
+    await expect(fixture.links.resolve("first-link")).resolves.toEqual({
+      status: "suspended",
+    })
+    await expect(fixture.links.resolve("second-link")).resolves.toEqual({
+      status: "redirect",
+      destination: "https://docs.example.com/second",
+    })
+  })
+
   it("blocks SSO sign-in while the Member is suspended and allows it after restore", async () => {
     const fixture = createFixture()
 

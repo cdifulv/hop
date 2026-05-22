@@ -15,6 +15,13 @@
       "when": 1778954622375,
       "tag": "0001_slim_mongoose",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1779436800000,
+      "tag": "0002_link_suspension_provenance",
+      "breakpoints": true
     }
   ]
 }

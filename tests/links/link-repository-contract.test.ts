@@ -100,7 +100,10 @@ for (const adapter of adapters) {
       await harness.repository.tombstoneBySlugKey(slugKey)
 
       await expect(
-        harness.repository.suspendBySlugKey(slugKey),
+        harness.repository.suspendBySlugKey(slugKey, {
+          adminMemberId: "admin-1",
+          suspendedAt: new Date("2026-05-16T12:00:00.000Z"),
+        }),
       ).resolves.toBeNull()
       await expect(
         harness.repository.unsuspendBySlugKey(slugKey),

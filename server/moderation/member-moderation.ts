@@ -18,7 +18,10 @@ export interface MemberSuspensionRepository {
  * the Link lifecycle; Moderation never reaches into the Link repository.
  */
 export interface MemberLinkSuspension {
-  suspendMemberLinks(member: { id: string }): Promise<LinkRecord[]>
+  suspendMemberLinks(
+    member: { id: string },
+    actor: { id: string },
+  ): Promise<LinkRecord[]>
   unsuspendMemberLinks(member: { id: string }): Promise<LinkRecord[]>
 }
 
@@ -79,7 +82,7 @@ export function createMemberModeration(options: MemberModerationOptions) {
         }
       }
 
-      const links = await options.links.suspendMemberLinks(member)
+      const links = await options.links.suspendMemberLinks(member, actor)
       await options.sessions.invalidateSessions(member)
 
       return {

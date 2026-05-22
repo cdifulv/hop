@@ -6,6 +6,16 @@ import { can, type LinkAction, type LinkActor } from "./authorization-policy"
 
 export type LinkLifecycleState = "active" | "suspended" | "tombstoned"
 
+export interface LinkSuspensionSource {
+  adminMemberId: string
+  suspendedAt: Date
+}
+
+export interface LinkSuspensionProvenance {
+  direct: LinkSuspensionSource | null
+  owner: LinkSuspensionSource | null
+}
+
 export interface LinkRecord {
   id: string
   slug: string
@@ -14,6 +24,7 @@ export interface LinkRecord {
   expiresAt: Date | null
   ownerMemberId: string | null
   lifecycleState: LinkLifecycleState
+  suspension: LinkSuspensionProvenance
   createdAt: Date
   updatedAt: Date
 }
@@ -51,9 +62,15 @@ export interface LinkRepository {
     slugKey: string,
     expiresAt: Date | null,
   ): Promise<LinkRecord | null>
-  suspendBySlugKey(slugKey: string): Promise<LinkRecord | null>
+  suspendBySlugKey(
+    slugKey: string,
+    source: LinkSuspensionSource,
+  ): Promise<LinkRecord | null>
   unsuspendBySlugKey(slugKey: string): Promise<LinkRecord | null>
-  suspendByOwnerMemberId(memberId: string): Promise<LinkRecord[]>
+  suspendByOwnerMemberId(
+    memberId: string,
+    source: LinkSuspensionSource,
+  ): Promise<LinkRecord[]>
   unsuspendByOwnerMemberId(memberId: string): Promise<LinkRecord[]>
   tombstoneBySlugKey(slugKey: string): Promise<LinkRecord | null>
 }
@@ -356,7 +373,11 @@ export function createLinkLifecycle(options: LinkLifecycleOptions) {
         actor: { type: "member", memberId: member.id, isAdmin: member.isAdmin },
         action: "suspend",
         slug,
-        mutate: (slugKey) => options.repository.suspendBySlugKey(slugKey),
+        mutate: (slugKey) =>
+          options.repository.suspendBySlugKey(slugKey, {
+            adminMemberId: member.id,
+            suspendedAt: clock.now(),
+          }),
         status: "suspended",
       })
     },
@@ -374,8 +395,14 @@ export function createLinkLifecycle(options: LinkLifecycleOptions) {
         status: "unsuspended",
       })
     },
-    async suspendMemberLinks(member: { id: string }): Promise<LinkRecord[]> {
-      return options.repository.suspendByOwnerMemberId(member.id)
+    async suspendMemberLinks(
+      member: { id: string },
+      actor: { id: string },
+    ): Promise<LinkRecord[]> {
+      return options.repository.suspendByOwnerMemberId(member.id, {
+        adminMemberId: actor.id,
+        suspendedAt: clock.now(),
+      })
     },
     async unsuspendMemberLinks(member: { id: string }): Promise<LinkRecord[]> {
       return options.repository.unsuspendByOwnerMemberId(member.id)
@@ -412,7 +439,11 @@ export function createLinkLifecycle(options: LinkLifecycleOptions) {
         }
       }
 
-      if (link.lifecycleState === "suspended") {
+      if (
+        link.lifecycleState === "suspended" ||
+        link.suspension.direct ||
+        link.suspension.owner
+      ) {
         return {
           status: "suspended",
         }

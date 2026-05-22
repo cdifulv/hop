@@ -117,13 +117,16 @@ export function createDrizzleLinkRepository(): LinkRepository {
 
       return link ? toLinkRecord(link) : null
     },
-    async suspendBySlugKey(slugKey) {
+    async suspendBySlugKey(slugKey, source) {
+      const now = new Date()
       const [link] = await db
         .update(links)
         .set({
           lifecycleState: "suspended",
-          suspendedAt: new Date(),
-          updatedAt: new Date(),
+          suspendedAt: now,
+          directSuspendedByMemberId: source.adminMemberId,
+          directSuspendedAt: source.suspendedAt,
+          updatedAt: now,
         })
         .where(
           and(eq(links.slugKey, slugKey), ne(links.lifecycleState, "tombstoned")),
@@ -132,13 +135,16 @@ export function createDrizzleLinkRepository(): LinkRepository {
 
       return link ? toLinkRecord(link) : null
     },
-    async suspendByOwnerMemberId(memberId) {
+    async suspendByOwnerMemberId(memberId, source) {
+      const now = new Date()
       const suspended = await db
         .update(links)
         .set({
           lifecycleState: "suspended",
-          suspendedAt: new Date(),
-          updatedAt: new Date(),
+          suspendedAt: now,
+          ownerSuspendedByMemberId: source.adminMemberId,
+          ownerSuspendedAt: source.suspendedAt,
+          updatedAt: now,
         })
         .where(
           and(eq(links.ownerMemberId, memberId), ne(links.lifecycleState, "tombstoned")),
@@ -148,12 +154,15 @@ export function createDrizzleLinkRepository(): LinkRepository {
       return suspended.map(toLinkRecord)
     },
     async unsuspendBySlugKey(slugKey) {
+      const now = new Date()
       const [link] = await db
         .update(links)
         .set({
-          lifecycleState: "active",
-          suspendedAt: null,
-          updatedAt: new Date(),
+          lifecycleState: sql`case when ${links.ownerSuspendedAt} is null then 'active'::link_lifecycle_state else 'suspended'::link_lifecycle_state end`,
+          suspendedAt: sql`case when ${links.ownerSuspendedAt} is null then null else ${links.ownerSuspendedAt} end`,
+          directSuspendedByMemberId: null,
+          directSuspendedAt: null,
+          updatedAt: now,
         })
         .where(
           and(eq(links.slugKey, slugKey), ne(links.lifecycleState, "tombstoned")),
@@ -163,12 +172,15 @@ export function createDrizzleLinkRepository(): LinkRepository {
       return link ? toLinkRecord(link) : null
     },
     async unsuspendByOwnerMemberId(memberId) {
+      const now = new Date()
       const unsuspended = await db
         .update(links)
         .set({
-          lifecycleState: "active",
-          suspendedAt: null,
-          updatedAt: new Date(),
+          lifecycleState: sql`case when ${links.directSuspendedAt} is null then 'active'::link_lifecycle_state else 'suspended'::link_lifecycle_state end`,
+          suspendedAt: sql`case when ${links.directSuspendedAt} is null then null else ${links.directSuspendedAt} end`,
+          ownerSuspendedByMemberId: null,
+          ownerSuspendedAt: null,
+          updatedAt: now,
         })
         .where(
           and(eq(links.ownerMemberId, memberId), ne(links.lifecycleState, "tombstoned")),
@@ -215,6 +227,22 @@ export function toLinkRecord(link: typeof links.$inferSelect): LinkRecord {
     expiresAt: link.expiresAt,
     ownerMemberId: link.ownerMemberId,
     lifecycleState: link.lifecycleState,
+    suspension: {
+      direct:
+        link.directSuspendedByMemberId && link.directSuspendedAt
+          ? {
+              adminMemberId: link.directSuspendedByMemberId,
+              suspendedAt: link.directSuspendedAt,
+            }
+          : null,
+      owner:
+        link.ownerSuspendedByMemberId && link.ownerSuspendedAt
+          ? {
+              adminMemberId: link.ownerSuspendedByMemberId,
+              suspendedAt: link.ownerSuspendedAt,
+            }
+          : null,
+    },
     createdAt: link.createdAt,
     updatedAt: link.updatedAt,
   }
